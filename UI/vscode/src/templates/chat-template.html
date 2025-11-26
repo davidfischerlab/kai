@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self' 'unsafe-inline';">
+    <style>
+        body {
+            font-family: var(--vscode-font-family);
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background: var(--vscode-editor-background);
+            color: var(--vscode-editor-foreground);
+        }
+        
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: var(--vscode-editor-background);
+        }
+        
+        .message {
+            padding: 8px 12px;
+            border-radius: 8px;
+            max-width: 80%;
+            word-wrap: break-word;
+            color: var(--vscode-foreground);
+        }
+        
+        .message.user {
+            align-self: flex-end;
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+        }
+        
+        .message.assistant {
+            align-self: flex-start;
+            background: var(--vscode-editor-inactiveSelectionBackground);
+            border: 1px solid var(--vscode-widget-border);
+            color: var(--vscode-foreground);
+        }
+        
+        .message.assistant.thinking {
+            opacity: 0.6;
+            font-style: italic;
+        }
+        
+        .message.assistant.button-action {
+            background: var(--vscode-editorWidget-background);
+            border: 1px solid var(--vscode-widget-border);
+            color: var(--vscode-foreground);
+        }
+
+        .message.assistant.critique {
+            background: rgba(255, 87, 87, 0.15);
+            border: 1px solid rgba(255, 87, 87, 0.4);
+            color: var(--vscode-foreground);
+            animation: critiquePulse 2s ease-in-out infinite;
+        }
+
+        @keyframes critiquePulse {
+            0% {
+                background: rgba(255, 87, 87, 0.15);
+                border-color: rgba(255, 87, 87, 0.4);
+                box-shadow: 0 0 0 0 rgba(255, 87, 87, 0.3);
+            }
+            50% {
+                background: rgba(255, 87, 87, 0.25);
+                border-color: rgba(255, 87, 87, 0.6);
+                box-shadow: 0 0 0 4px rgba(255, 87, 87, 0.1);
+            }
+            100% {
+                background: rgba(255, 87, 87, 0.15);
+                border-color: rgba(255, 87, 87, 0.4);
+                box-shadow: 0 0 0 0 rgba(255, 87, 87, 0.3);
+            }
+        }
+
+        .message.assistant.agent-notification {
+            background: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.4);
+            color: var(--vscode-foreground);
+            animation: agentNotificationPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes agentNotificationPulse {
+            0% {
+                background: rgba(34, 197, 94, 0.15);
+                border-color: rgba(34, 197, 94, 0.4);
+                box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3);
+            }
+            50% {
+                background: rgba(34, 197, 94, 0.25);
+                border-color: rgba(34, 197, 94, 0.6);
+                box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.1);
+            }
+            100% {
+                background: rgba(34, 197, 94, 0.15);
+                border-color: rgba(34, 197, 94, 0.4);
+                box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3);
+            }
+        }
+
+        .timestamp {
+            font-size: 0.8em;
+            opacity: 0.6;
+            margin-bottom: 4px;
+        }
+        
+        .code-block {
+            background: var(--vscode-textCodeBlock-background);
+            border: 1px solid var(--vscode-widget-border);
+            border-radius: 4px;
+            padding: 8px;
+            margin: 4px 0;
+            overflow-x: auto;
+            position: relative;
+        }
+        
+        .code-block button {
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: none;
+            border-radius: 3px;
+            padding: 3px 6px;
+            cursor: pointer;
+            font-size: 0.75em;
+            font-weight: bold;
+            min-width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .code-block button:hover {
+            background: var(--vscode-button-hoverBackground);
+        }
+
+        /* Markdown styling */
+        .message h1, .message h2 {
+            color: var(--vscode-foreground);
+            margin: 0.5em 0;
+            font-weight: bold;
+        }
+        
+        .message h1 {
+            font-size: 1.2em;
+            border-bottom: 1px solid var(--vscode-widget-border);
+            padding-bottom: 0.3em;
+        }
+        
+        .message h2 {
+            font-size: 1.1em;
+        }
+        
+        .message strong {
+            font-weight: bold;
+            color: var(--vscode-foreground);
+        }
+        
+        .message em {
+            font-style: italic;
+        }
+        
+        .message ul {
+            margin: 0.5em 0;
+            padding-left: 1.2em;
+            list-style: none;
+        }
+        
+        .message li {
+            margin: 0.2em 0;
+            line-height: 1.4;
+        }
+        
+        #input-container {
+            display: flex;
+            align-items: flex-end; /* Align buttons to bottom of textarea */
+            padding: 10px;
+            gap: 10px;
+            border-top: 1px solid var(--vscode-widget-border);
+            background: var(--vscode-sideBar-background);
+        }
+        
+        #chat-input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid var(--vscode-input-border);
+            background: var(--vscode-input-background);
+            color: var(--vscode-input-foreground);
+            border-radius: 4px;
+            resize: none; /* Prevent manual resize */
+            overflow-y: hidden; /* Hide scrollbar initially */
+            min-height: 20px; /* Minimum height to align with buttons */
+            max-height: 200px; /* Maximum height before scrolling */
+            line-height: 1.4;
+            font-family: var(--vscode-font-family);
+            font-size: var(--vscode-font-size);
+        }
+        
+        button {
+            padding: 8px 16px;
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            height: 36px; /* Fixed height to match textarea min height + padding */
+            flex-shrink: 0; /* Prevent buttons from shrinking */
+            white-space: nowrap; /* Prevent text wrapping */
+        }
+        
+        button:hover {
+            background: var(--vscode-button-hoverBackground);
+        }
+        
+        .quick-actions {
+            display: flex;
+            gap: 5px;
+            padding: 5px 10px;
+            flex-wrap: wrap;
+            border-bottom: 1px solid var(--vscode-widget-border);
+            background: var(--vscode-sideBar-background);
+        }
+        
+        .quick-action {
+            font-size: 0.9em;
+            padding: 4px 8px;
+            height: auto;  /* Override the general button height */
+            min-height: 28px;  /* Set a more compact minimum height */
+        }
+        
+        
+        .tool-usage-message {
+            background: var(--vscode-editor-inactiveSelectionBackground);
+            border-left: 3px solid var(--vscode-progressBar-background);
+            padding: 6px 10px;
+            margin: 8px 0 4px 0;
+            border-radius: 3px;
+            font-size: 0.85em;
+            opacity: 0.9;
+            max-width: 70%;
+            align-self: center;
+        }
+        
+        .tool-usage-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 2px;
+        }
+        
+        .tool-icon {
+            font-size: 1em;
+        }
+        
+        .tool-name {
+            font-weight: 500;
+            color: var(--vscode-foreground);
+        }
+        
+        .tool-status {
+            margin-left: auto;
+            font-size: 0.8em;
+        }
+        
+        .tool-query {
+            font-family: var(--vscode-editor-font-family);
+            background: var(--vscode-editor-background);
+            padding: 2px 4px;
+            border-radius: 2px;
+            margin-top: 2px;
+            font-size: 0.8em;
+        }
+        
+        .tool-collections {
+            font-family: var(--vscode-editor-font-family);
+            background: var(--vscode-editor-background);
+            padding: 2px 4px;
+            border-radius: 2px;
+            margin-top: 2px;
+            font-size: 0.8em;
+            font-weight: 500;
+        }
+        
+        /* Auto-follow button states - only background color changes, emoji stays the same */
+    </style>
+</head>
+<body>
+    <div class="quick-actions">
+        <button class="quick-action" id="fix-btn">🔧</button>
+        <button class="quick-action" id="continue-btn">➡️</button>
+        <button class="quick-action" id="review-btn">💬</button>
+        <button class="quick-action" id="rag-toggle">📚 RAG</button>
+        <button class="quick-action" id="autonomous-toggle">🤖 Auto</button>
+        <button class="quick-action" id="autofollow-toggle">👀</button>
+    </div>
+    
+    
+    <div id="messages"></div>
+    
+    <div id="input-container">
+        <textarea id="chat-input" placeholder="Ask me anything..." rows="1"></textarea>
+        <button id="send-btn">Send</button>
+        <button id="feedback-btn" style="display: none;">Feedback</button>
+        <button id="action-btn">Clear</button>
+    </div>
+    
+    <script>
+        const vscode = acquireVsCodeApi();
+        let messages = [];
+
+        // Markdown parser function
+        function parseMarkdown(text) {
+            let html = text;
+            
+            // Escape HTML entities first
+            html = html
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+            
+            // Headers (## Header)
+            html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+            
+            // Bold (**text**)
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            
+            // Italic (*text*)
+            html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+            
+            // Bullet points (- item or • item)
+            html = html.replace(/^[•-] (.+)$/gm, '<li>$1</li>');
+            
+            // Wrap consecutive <li> elements in <ul>
+            html = html.replace(/(<li>.*?<\/li>(?:\s*<li>.*?<\/li>)*)/gs, '<ul>$1</ul>');
+            
+            // Numbered lists (1. item)
+            html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+            
+            // Convert line breaks to <br>
+            html = html.replace(/\n/g, '<br>');
+            
+            return html;
+        }
+        
+        function processMessageForDisplay(message) {
+            const parts = message.content.split(/(```[\s\S]*?```)/);
+            const container = document.createElement('div');
+            let isCodeBlock = false;
+            
+            for (let i = 0; i < parts.length; i++) {
+                if (isCodeBlock) {
+                    // Create code block with buttons
+                    const codeBlock = document.createElement('div');
+                    codeBlock.className = 'code-block';
+                    
+                    let code = parts[i].slice(3, -3).trim();
+                    
+                    const pre = document.createElement('pre');
+                    pre.style.margin = '0';
+                    pre.style.whiteSpace = 'pre-wrap';
+                    pre.textContent = code;
+                    codeBlock.appendChild(pre);
+                    
+                    // Create buttons container
+                    const buttonContainer = document.createElement('div');
+                    buttonContainer.style.position = 'absolute';
+                    buttonContainer.style.top = '4px';
+                    buttonContainer.style.right = '4px';
+                    buttonContainer.style.display = 'flex';
+                    buttonContainer.style.gap = '4px';
+                    
+                    // Determine if buttons should be disabled
+                    const buttonsDisabled = message.buttonsUsed || false;
+                    const disabledStyle = buttonsDisabled ? 
+                        'opacity: 0.5; cursor: not-allowed; background: var(--vscode-button-secondaryBackground);' : '';
+                    
+                    // Show cell number in button labels for clarity
+                    const cellNumberDisplay = message.targetCellNumber !== null && message.targetCellNumber !== undefined 
+                        ? ` (${message.targetCellNumber})` 
+                        : '';
+                    
+                    // Insert button
+                    const insertBtn = document.createElement('button');
+                    insertBtn.innerHTML = '+';
+                    insertBtn.style.cssText = disabledStyle;
+                    insertBtn.onclick = () => {
+                        if (!buttonsDisabled) {
+                            vscode.postMessage({
+                                type: 'insertCode',
+                                code: code,
+                                cellNumber: message.targetCellNumber
+                            });
+                            // Mark buttons as used
+                            vscode.postMessage({
+                                type: 'markButtonsUsed',
+                                messageIndex: message.messageIndex
+                            });
+                        }
+                    };
+                    
+                    // Replace button
+                    const replaceBtn = document.createElement('button');
+                    replaceBtn.innerHTML = '↻';
+                    replaceBtn.style.cssText = disabledStyle;
+                    replaceBtn.onclick = () => {
+                        if (!buttonsDisabled) {
+                            vscode.postMessage({
+                                type: 'replaceCode',
+                                code: code,
+                                cellNumber: message.targetCellNumber
+                            });
+                            // Mark buttons as used
+                            vscode.postMessage({
+                                type: 'markButtonsUsed',
+                                messageIndex: message.messageIndex
+                            });
+                        }
+                    };
+                    
+                    // Insert and Execute button
+                    const insertExecuteBtn = document.createElement('button');
+                    insertExecuteBtn.innerHTML = '▶';
+                    insertExecuteBtn.style.cssText = disabledStyle;
+                    insertExecuteBtn.onclick = () => {
+                        if (!buttonsDisabled) {
+                            vscode.postMessage({
+                                type: 'insertAndExecuteCode',
+                                code: code,
+                                cellNumber: message.targetCellNumber
+                            });
+                            // Mark buttons as used
+                            vscode.postMessage({
+                                type: 'markButtonsUsed',
+                                messageIndex: message.messageIndex
+                            });
+                        }
+                    };
+                    
+                    // Replace and Execute button
+                    const replaceExecuteBtn = document.createElement('button');
+                    replaceExecuteBtn.innerHTML = '▶';
+                    replaceExecuteBtn.style.cssText = disabledStyle;
+                    replaceExecuteBtn.onclick = () => {
+                        if (!buttonsDisabled) {
+                            vscode.postMessage({
+                                type: 'replaceAndExecuteCode',
+                                code: code,
+                                cellNumber: message.targetCellNumber
+                            });
+                            // Mark buttons as used
+                            vscode.postMessage({
+                                type: 'markButtonsUsed',
+                                messageIndex: message.messageIndex
+                            });
+                        }
+                    };
+                    
+                    // Determine operation type from agent metadata (default to insert)
+                    const operationType = message.metadata?.operation_type || 'insert';
+                    const isReplacement = operationType === 'replace';
+                    
+                    if (isReplacement) {
+                        // Replacement context: show Replace + Replace&Execute
+                        buttonContainer.appendChild(replaceBtn);
+                        buttonContainer.appendChild(replaceExecuteBtn);
+                    } else {
+                        // Addition context: show Insert + Insert&Execute  
+                        buttonContainer.appendChild(insertBtn);
+                        buttonContainer.appendChild(insertExecuteBtn);
+                    }
+                    
+                    codeBlock.appendChild(buttonContainer);
+                    container.appendChild(codeBlock);
+                } else {
+                    // Regular text - parse markdown
+                    const textNode = document.createElement('div');
+                    textNode.innerHTML = parseMarkdown(parts[i]);
+                    container.appendChild(textNode);
+                }
+                isCodeBlock = !isCodeBlock;
+            }
+            
+            return container;
+        }
+        
+        function displayToolUsage(tool) {
+            const messagesContainer = document.getElementById('messages');
+            
+            const toolMessage = document.createElement('div');
+            toolMessage.className = 'tool-usage-message';
+            
+            const header = document.createElement('div');
+            header.className = 'tool-usage-header';
+            
+            const icon = document.createElement('span');
+            icon.className = 'tool-icon';
+            icon.textContent = tool.icon || '🔧';
+            
+            const name = document.createElement('span');
+            name.className = 'tool-name';
+            name.textContent = tool.name;
+            
+            const status = document.createElement('span');
+            status.className = 'tool-status';
+            status.textContent = tool.status || 'running...';
+            
+            header.appendChild(icon);
+            header.appendChild(name);
+            header.appendChild(status);
+            
+            toolMessage.appendChild(header);
+            
+            if (tool.query) {
+                const query = document.createElement('div');
+                query.className = 'tool-query';
+                query.textContent = tool.query;
+                toolMessage.appendChild(query);
+            }
+            
+            if (tool.collections && tool.collections.length > 0) {
+                const collections = document.createElement('div');
+                collections.className = 'tool-collections';
+                collections.textContent = tool.collections.join(', ');
+                toolMessage.appendChild(collections);
+            }
+            
+            messagesContainer.appendChild(toolMessage);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        function updateMessages(newMessages) {
+            messages = newMessages;
+            const messagesContainer = document.getElementById('messages');
+            messagesContainer.innerHTML = '';
+            
+            messages.forEach((message, index) => {
+                const messageDiv = document.createElement('div');
+                let className = `message ${message.role}`;
+                if (message.isIndicator) className += ' thinking';
+                if (message.isButtonAction) className += ' button-action';
+                if (message.metadata && message.metadata.isCritique) className += ' critique';
+                if (message.metadata && message.metadata.isAgentNotification) className += ' agent-notification';
+                messageDiv.className = className;
+
+                // Add timestamp if available
+                if (message.timestamp) {
+                    const timestampDiv = document.createElement('div');
+                    timestampDiv.className = 'timestamp';
+                    timestampDiv.textContent = message.timestamp;
+                    messageDiv.appendChild(timestampDiv);
+                }
+                
+                // Add message index for button tracking
+                message.messageIndex = index;
+                
+                const processedContent = processMessageForDisplay(message);
+                messageDiv.appendChild(processedContent);
+                messagesContainer.appendChild(messageDiv);
+            });
+            
+            // Scroll to bottom
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        
+        // Handle messages from extension
+        window.addEventListener('message', event => {
+            const message = event.data;
+            switch (message.type) {
+                case 'updateMessages':
+                    updateMessages(message.messages);
+                    break;
+                case 'updateRagToggle':
+                    const ragToggle = document.getElementById('rag-toggle');
+                    if (ragToggle) {
+                        if (message.enabled) {
+                            ragToggle.style.opacity = '1';
+                            ragToggle.style.fontWeight = 'bold';
+                        } else {
+                            ragToggle.style.opacity = '0.5';
+                            ragToggle.style.fontWeight = 'normal';
+                        }
+                    }
+                    break;
+                case 'updateAutonomousToggle':
+                    const autonomousToggle = document.getElementById('autonomous-toggle');
+                    if (autonomousToggle) {
+                        if (message.enabled) {
+                            autonomousToggle.style.opacity = '1';
+                            autonomousToggle.style.fontWeight = 'bold';
+                        } else {
+                            autonomousToggle.style.opacity = '0.5';
+                            autonomousToggle.style.fontWeight = 'normal';
+                        }
+                    }
+                    break;
+                case 'updateAutoFollowToggle':
+                    const autoFollowToggle = document.getElementById('autofollow-toggle');
+                    if (autoFollowToggle) {
+                        if (message.enabled && message.autonomousMode) {
+                            autoFollowToggle.style.opacity = '1';
+                            autoFollowToggle.style.fontWeight = 'bold';
+                            autoFollowToggle.style.backgroundColor = 'var(--vscode-button-background)';
+                            autoFollowToggle.style.color = 'var(--vscode-button-foreground)';
+                        } else {
+                            autoFollowToggle.style.opacity = '0.5';
+                            autoFollowToggle.style.fontWeight = 'normal';
+                            autoFollowToggle.style.backgroundColor = 'var(--vscode-button-background)';
+                            autoFollowToggle.style.color = 'var(--vscode-button-foreground)';
+                        }
+                    }
+                    break;
+                case 'updateAutoModeButton':
+                    const feedbackBtnAutoMode = document.getElementById('feedback-btn');
+                    const sendBtnAutoMode = document.getElementById('send-btn');
+                    const actionBtnAutoMode = document.getElementById('action-btn');
+
+                    if (feedbackBtnAutoMode && sendBtnAutoMode) {
+                        if (message.isAutonomousRunning) {
+                            // In autonomous mode: show feedback button, hide send button
+                            feedbackBtnAutoMode.style.display = 'inline-block';
+                            sendBtnAutoMode.style.display = 'none';
+                        } else {
+                            // In regular mode: hide feedback button, show send button
+                            feedbackBtnAutoMode.style.display = 'none';
+                            sendBtnAutoMode.style.display = 'inline-block';
+                        }
+                    }
+
+                    if (actionBtnAutoMode) {
+                        if (message.isAutonomousRunning) {
+                            // In autonomous mode: action button becomes Stop
+                            actionBtnAutoMode.textContent = 'Stop';
+                            actionBtnAutoMode.style.backgroundColor = '#d73a49';
+                            actionBtnAutoMode.style.color = 'white';
+                        } else {
+                            // In regular mode: action button becomes Clear
+                            actionBtnAutoMode.textContent = 'Clear';
+                            actionBtnAutoMode.style.backgroundColor = 'var(--vscode-button-background)';
+                            actionBtnAutoMode.style.color = 'var(--vscode-button-foreground)';
+                        }
+                    }
+                    break;
+                case 'toolUsage':
+                    displayToolUsage(message.tool);
+                    break;
+            }
+        });
+
+        // Auto-resize function for textarea
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+
+            // Enable scrolling if content exceeds max height
+            if (textarea.scrollHeight > 200) {
+                textarea.style.overflowY = 'auto';
+            } else {
+                textarea.style.overflowY = 'hidden';
+            }
+        }
+
+        // Set up event listeners
+        const chatInput = document.getElementById('chat-input');
+
+        chatInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault(); // Prevent default new line
+                sendMessage();
+            }
+            // Allow Shift+Enter to create new lines naturally
+        });
+
+        chatInput.addEventListener('input', function() {
+            autoResize(this);
+        });
+
+        // Initial auto-resize to set proper height
+        chatInput.addEventListener('focus', function() {
+            autoResize(this);
+        });
+        
+        document.getElementById('send-btn').addEventListener('click', sendMessage);
+        
+        document.getElementById('action-btn').addEventListener('click', function() {
+            const actionBtn = document.getElementById('action-btn');
+            if (actionBtn.textContent === 'Stop') {
+                vscode.postMessage({ type: 'stopAutonomousExecution' });
+            } else {
+                vscode.postMessage({ type: 'clear' });
+            }
+        });
+        
+        document.getElementById('feedback-btn').addEventListener('click', function() {
+            // Make feedback button behave exactly like send button (hitting enter)
+            sendMessage();
+        });
+        
+        document.getElementById('rag-toggle').addEventListener('click', function() {
+            vscode.postMessage({ type: 'toggleRag' });
+        });
+
+        document.getElementById('autonomous-toggle').addEventListener('click', function() {
+            vscode.postMessage({ type: 'toggleAutonomous' });
+        });
+        
+        document.getElementById('autofollow-toggle').addEventListener('click', function() {
+            vscode.postMessage({ type: 'toggleAutoFollow' });
+        });
+        
+        // Quick action buttons - send standardized messages
+        document.getElementById('fix-btn').addEventListener('click', function() {
+            sendQuickMessage('Fix the code in this cell');
+        });
+        
+        document.getElementById('continue-btn').addEventListener('click', function() {
+            sendQuickMessage('Build a next cell that continues this analysis');
+        });
+        
+        document.getElementById('review-btn').addEventListener('click', function() {
+            sendQuickMessage('Explain this code in the context of the notebook');
+        });
+        
+        function sendQuickMessage(message) {
+            const input = document.getElementById('chat-input');
+            input.value = message;
+            autoResize(input); // Resize after setting value
+            sendMessage();
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (message) {
+                vscode.postMessage({ type: 'chat', message: message });
+                input.value = '';
+                autoResize(input); // Resize after clearing value
+            }
+        }
+    </script>
+</body>
+</html>

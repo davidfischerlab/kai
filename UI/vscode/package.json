@@ -1,0 +1,126 @@
+{
+  "name": "kai-agent-vscode",
+  "displayName": "Kai Agent",
+  "description": "Agentic AI system for single-cell and spatial omics analysis in Jupyter notebooks",
+  "version": "0.1.0",
+  "publisher": "local",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Data Science",
+    "Machine Learning",
+    "Notebooks"
+  ],
+  "keywords": [
+    "bioinformatics",
+    "single-cell",
+    "jupyter",
+    "ai",
+    "analysis"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/davidfischerlab/kai.git"
+  },
+  "activationEvents": [
+    "onNotebook:jupyter-notebook",
+    "onLanguage:python"
+  ],
+  "main": "./out/extensions.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "kai_agent",
+          "title": "Kai",
+          "icon": "resources/sidebar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "kai_agent": [
+        {
+          "id": "kai_agent_Chat",
+          "name": "Chat",
+          "icon": "$(comment-discussion)",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "kai_agent.showChat",
+        "title": "Kai: Show Chat",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "kai_agent.fixCell",
+        "title": "Kai: Fix Cell",
+        "icon": "$(wrench)"
+      },
+      {
+        "command": "kai_agent.deleteCell",
+        "title": "Kai: Delete Cell",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "kai_agent.executeCell",
+        "title": "Kai: Execute Cell",
+        "icon": "$(play-circle)"
+      }
+    ],
+    "menus": {
+      "notebook/cell/title": [
+        {
+          "command": "kai_agent.fixCell",
+          "when": "notebookType == jupyter-notebook && notebookCellType == code",
+          "group": "kai_agent@1"
+        },
+        {
+          "command": "kai_agent.executeCell",
+          "when": "notebookType == jupyter-notebook && notebookCellType == code",
+          "group": "kai_agent@2"
+        },
+        {
+          "command": "kai_agent.deleteCell",
+          "when": "notebookType == jupyter-notebook && notebookCellType == code",
+          "group": "kai_agent@3"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Kai Agent",
+      "properties": {
+        "kai_agent.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Path to Python interpreter with kai-agent installed"
+        },
+        "kai_agent.ollamaApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Ollama API key (optional - can use OLLAMA_API_KEY environment variable)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./ && cp src/python-subprocess.py out/providers/ && mkdir -p out/templates && cp src/templates/chat-template.html out/templates/",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "16.x",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^5.45.0",
+    "eslint": "^8.28.0",
+    "typescript": "^4.9.3",
+    "vsce": "^2.15.0"
+  },
+  "dependencies": {}
+}

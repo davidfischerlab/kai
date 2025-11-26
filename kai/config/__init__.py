@@ -1,0 +1,1 @@
+"""Constants package for bioinformatics agent."""

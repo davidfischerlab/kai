@@ -1,0 +1,62 @@
+# Core dependencies
+langchain>=0.3.0
+langchain-community>=0.3.0
+langchain-text-splitters>=0.3.0
+ollama>=0.1.7
+jupyter>=1.1.0
+nbformat>=5.9.0
+nbconvert>=7.0.0
+gitpython>=3.1.40
+pandas>=2.2.0
+numpy>=1.26.0
+scikit-learn>=1.3.0
+
+# Vector storage and embeddings
+chromadb>=0.4.22
+sentence-transformers>=2.2.2
+
+# Web scraping and parsing
+beautifulsoup4>=4.12.0
+requests>=2.32.0
+PyPDF2>=3.0.0
+arxiv>=2.0.0
+
+# Configuration and CLI
+pyyaml>=6.0.1
+click>=8.1.7
+python-dotenv>=1.0.0
+
+# Bioinformatics packages
+scanpy[leiden]>=1.9.0
+anndata>=0.10.0
+squidpy>=1.3.0
+scvi-tools>=1.0.0
+
+# R integration (optional)
+# rpy2>=3.5.0
+
+# Utilities
+tqdm>=4.65.0
+colorama>=0.4.6
+tabulate>=0.9.0
+jsonschema>=4.17.0
+
+# Async support
+aiohttp>=3.9.0
+aiofiles>=23.0.0
+
+# Code execution and sandboxing
+jupyter-client>=8.0.0
+ipykernel>=6.25.0
+
+# Documentation parsing
+markdown>=3.5.0
+python-frontmatter>=1.0.0
+
+# Missing dependencies found in code
+matplotlib>=3.7.0
+torch>=2.0.0
+tornado>=6.3.0
+
+# Testing
+pytest-asyncio>=0.21.0
