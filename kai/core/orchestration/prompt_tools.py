@@ -701,9 +701,6 @@ class CodeGenerationWithGuidanceTool(UnstructuredPromptTool):
             "cell_type": "code"
         }
 
-        # Debug logging to track cell_type
-        print(f"[CodeGenerationWithGuidanceTool] Sending cell_type={vscode_response['cell_type']}, target_cell={positioning_info.get('target_cell')}", flush=True)
-
         return ToolResult(
             output_ui=vscode_response,
             output_type=ToolOutputType.EXECUTE_ONLY
@@ -736,9 +733,6 @@ class ReasoningResponseWithGuidanceTool(UnstructuredPromptTool):
         }
         # Make reasoning available for potential critiques:
         output_workflow = {"reasoning_response": response}
-
-        # Debug logging to track cell_type
-        print(f"[ReasoningResponseWithGuidanceTool] Sending cell_type={vscode_response['cell_type']}, target_cell={positioning_info.get('target_cell')}", flush=True)
 
         return ToolResult(
             output_type=ToolOutputType.EXECUTE_ONLY,
@@ -814,9 +808,6 @@ class CodeUpdateTool(UnstructuredPromptTool):
                 "cell_type": "code"
             }
             output_type = ToolOutputType.EXECUTE_ONLY
-
-            # Debug logging to track cell_type
-            print(f"[CodeUpdateTool] Sending cell_type={vscode_response['cell_type']}, target_cell={positioning_info.get('target_cell')}, strategy={error_recovery_strategy}", flush=True)
         else:
             vscode_response = response  # Manual mode: return full response as string
             output_type = ToolOutputType.RESPONSE

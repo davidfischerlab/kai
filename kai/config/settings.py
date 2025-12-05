@@ -36,7 +36,7 @@ class Settings:
     # Agent behavior
     MAX_RETRIES: int = 3
     TIMEOUT_SECONDS: int = 300
-    DEBUG_PROMPTS: bool = True  # Log all prompts to debug folder
+    DEBUG_PROMPTS: bool = True  # Log all prompts to debug folder (useful for debugging, disabled in Jupyter CLI)
     VERBOSE: bool = True
     DISABLE_TURBO: bool = False  # Disable Turbo mode (useful for tests)
 

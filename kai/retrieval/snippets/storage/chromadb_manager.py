@@ -305,8 +305,21 @@ class ChromaDbManager:
         
         self.settings = settings
         
-        # Initialize embedding function for ChromaDB
-        self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+        # Initialize embedding function for ChromaDB with progress bar disabled
+        # Create custom wrapper to disable tqdm progress bars
+        class SilentSentenceTransformerEmbeddingFunction(embedding_functions.SentenceTransformerEmbeddingFunction):
+            def __call__(self, input):
+                # Override to match ChromaDB's __call__ but add show_progress_bar=False
+                import numpy as np
+                embeddings = self._model.encode(
+                    list(input),
+                    convert_to_numpy=True,
+                    normalize_embeddings=self.normalize_embeddings,
+                    show_progress_bar=False  # Key addition to suppress tqdm
+                )
+                return [np.array(embedding, dtype=np.float32) for embedding in embeddings]
+
+        self.embedding_function = SilentSentenceTransformerEmbeddingFunction(
             model_name="sentence-transformers/all-MiniLM-L6-v2"
         )
         

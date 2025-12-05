@@ -51,6 +51,7 @@ class KaiAgent:
         knowledge_path: Optional[Path] = None,
         settings: Optional[Settings] = None,
         api_key: Optional[str] = None,
+        suppress_vscode_messages: bool = False,  # Suppress all VSCode JSON messages (for Jupyter interface)
     ):
         self.settings = settings or Settings.from_env()
         knowledge_path = knowledge_path or self.settings.KNOWLEDGE_BASE_PATH
@@ -66,7 +67,14 @@ class KaiAgent:
         # Create shared VSCode communicator for centralized message control
         from .orchestration.vscode_communicator import VSCodeCommunicator
         self.vscode = VSCodeCommunicator()
-        
+
+        # Remember suppression preference (for Jupyter interface)
+        self._suppress_vscode_messages = suppress_vscode_messages
+
+        # Suppress VSCode messages if requested (for Jupyter interface)
+        if suppress_vscode_messages:
+            self.vscode._disabled = True
+
         self.orchestrator = WorkflowOrchestrator(
             llm_interface=self.llm_interface,
             knowledge_base=self.knowledge_base,
@@ -151,9 +159,10 @@ class KaiAgent:
         if auto_mode_initiation:
             # Generate session_id in first iteration
             session_id = f"session_{hashlib.md5(f'{user_id}_{user_input}'.encode()).hexdigest()[:8]}"
-            
-            # Enable VSCode communication for new autonomous session
-            self.vscode.enable_communication()
+
+            # Enable VSCode communication for new autonomous session (unless suppression was requested)
+            if not self._suppress_vscode_messages:
+                self.vscode.enable_communication()
 
             # Get session timestamp consisting of date and time:
             date_str = datetime.now().strftime("%Y-%m-%d")
