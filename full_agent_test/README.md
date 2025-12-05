@@ -19,6 +19,7 @@ Execute all three Scenario 1 cases (blood, breast cancer, lung) in triplicate:
 # Use shell script (runs each test in isolated subprocess)
 ./full_agent_test/run_tests.sh \
     --api-key YOUR_API_KEY \
+    --env-agent /path/to/kai_agent_env/bin/python \
     --env-notebook /path/to/notebook_env/bin/python
 ```
 
@@ -87,7 +88,8 @@ full_agent_test/
 ```bash
 ./full_agent_test/run_tests.sh \
     --api-key YOUR_KEY \
-    --env-notebook /path/to/env/bin/python
+    --env-agent /path/to/kai_agent_env/bin/python \
+    --env-notebook /path/to/notebook_env/bin/python
 ```
 
 Runs all 3 cases × 3 replicates = 9 tests
@@ -98,13 +100,15 @@ Runs all 3 cases × 3 replicates = 9 tests
 # Just blood and lung
 ./full_agent_test/run_tests.sh \
     --api-key YOUR_KEY \
-    --env-notebook /path/to/env/bin/python \
+    --env-agent /path/to/kai_agent_env/bin/python \
+    --env-notebook /path/to/notebook_env/bin/python \
     --cases "blood lung"
 
 # Just breast cancer
 ./full_agent_test/run_tests.sh \
     --api-key YOUR_KEY \
-    --env-notebook /path/to/env/bin/python \
+    --env-agent /path/to/kai_agent_env/bin/python \
+    --env-notebook /path/to/notebook_env/bin/python \
     --cases "breastcancer"
 ```
 
@@ -114,13 +118,15 @@ Runs all 3 cases × 3 replicates = 9 tests
 # Run replicates 1-2 only
 ./full_agent_test/run_tests.sh \
     --api-key YOUR_KEY \
-    --env-notebook /path/to/env/bin/python \
+    --env-agent /path/to/kai_agent_env/bin/python \
+    --env-notebook /path/to/notebook_env/bin/python \
     --replicates 1-2
 
 # Run replicate 3 only
 ./full_agent_test/run_tests.sh \
     --api-key YOUR_KEY \
-    --env-notebook /path/to/env/bin/python \
+    --env-agent /path/to/kai_agent_env/bin/python \
+    --env-notebook /path/to/notebook_env/bin/python \
     --replicates 3-3
 ```
 
@@ -129,7 +135,8 @@ Runs all 3 cases × 3 replicates = 9 tests
 ```bash
 ./full_agent_test/run_tests.sh \
     --api-key YOUR_KEY \
-    --env-notebook /path/to/env/bin/python \
+    --env-agent /path/to/kai_agent_env/bin/python \
+    --env-notebook /path/to/notebook_env/bin/python \
     --output-dir my_test_run
 ```
 
@@ -139,7 +146,8 @@ Runs all 3 cases × 3 replicates = 9 tests
 # Allow more iterations for complex cases
 ./full_agent_test/run_tests.sh \
     --api-key YOUR_KEY \
-    --env-notebook /path/to/env/bin/python \
+    --env-agent /path/to/kai_agent_env/bin/python \
+    --env-notebook /path/to/notebook_env/bin/python \
     --max-iterations 150
 ```
 
@@ -387,7 +395,8 @@ All dependencies from main Kai installation:
 # 1. Run all tests (takes ~8-12 hours for 9 tests)
 ./full_agent_test/run_tests.sh \
     --api-key YOUR_KEY \
-    --env-notebook /path/to/env/bin/python
+    --env-agent /path/to/kai_agent_env/bin/python \
+    --env-notebook /path/to/notebook_env/bin/python
 
 # Monitor progress
 tail -f full_agent_test/test_outputs/full_agent_test_scenario1_blood_repeat1.log
@@ -407,7 +416,8 @@ cat full_agent_test/analysis/summary_report.txt
 # Run just one test for quick validation
 ./full_agent_test/run_tests.sh \
     --api-key YOUR_KEY \
-    --env-notebook /path/to/env/bin/python \
+    --env-agent /path/to/kai_agent_env/bin/python \
+    --env-notebook /path/to/notebook_env/bin/python \
     --cases "blood" \
     --replicates 1-1 \
     --max-iterations 50
@@ -422,7 +432,8 @@ python full_agent_test/analyze_results.py
 # Rerun just replicate 2 for all cases
 ./full_agent_test/run_tests.sh \
     --api-key YOUR_KEY \
-    --env-notebook /path/to/env/bin/python \
+    --env-agent /path/to/kai_agent_env/bin/python \
+    --env-notebook /path/to/notebook_env/bin/python \
     --replicates 2-2 \
     --output-dir full_agent_test/test_outputs  # Same dir to merge results
 
@@ -515,7 +526,8 @@ test_cases:
 ```bash
 ./full_agent_test/run_tests.sh \
     --api-key KEY \
-    --env-notebook /path/to/env/bin/python \
+    --env-agent /path/to/kai_agent_env/bin/python \
+    --env-notebook /path/to/notebook_env/bin/python \
     --cases "newcase"
 ```
 
