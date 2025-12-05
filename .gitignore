@@ -152,6 +152,7 @@ full_agent_test/test_outputs/*.json
 full_agent_test/analysis/*.png
 full_agent_test/analysis/*.csv
 full_agent_test/analysis/*.txt
+full_agent_test/analysis/notebook_reviews/
 /full_agent_test/h5ads
 
 PRODUCTION_CHECK.txt

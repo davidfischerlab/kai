@@ -7,6 +7,10 @@
 #
 # Usage:
 #   ./run_tests.sh --api-key YOUR_KEY --env-agent /path/to/agent_env/bin/python --env-notebook /path/to/notebook_env/bin/python
+
+# Increase file descriptor limit to prevent "Too many open files" errors
+# ChromaDB opens many file handles during RAG queries
+ulimit -n 10240
 #
 #   Options:
 #     --api-key KEY          API key for LLM provider (required)
@@ -267,6 +271,9 @@ echo "==============================================="
 # Analyze results
 echo ""
 echo "Generating analysis..."
-"$AGENT_PYTHON" "$SCRIPT_DIR/analyze_results.py" "$OUTPUT_DIR"
+"$AGENT_PYTHON" "$SCRIPT_DIR/analyze_results.py" \
+    --test-dir "$OUTPUT_DIR" \
+    --api-key "$API_KEY" \
+    --output "$SCRIPT_DIR/analysis"
 
 exit 0
