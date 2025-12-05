@@ -79,11 +79,9 @@ execution:
   timeout_minutes: 120  # 2 hours per case
 
 # LLM configuration
-# Note: When --api-key is provided, the test runner automatically uses 'ollama-turbo'
-# which connects to ollama.com cloud instead of local ollama
 llm:
-  provider: "ollama-turbo"  # Use ollama-turbo for cloud API (overridden if no api-key)
-  model: null  # Use default for provider
+  provider: "ollama-turbo"
+  model: null
   rag_enabled: true
 
 # Output configuration

@@ -16,14 +16,20 @@ This module provides automated testing of Kai's autonomous agent capabilities by
 Execute all three Scenario 1 cases (blood, breast cancer, lung) in triplicate:
 
 ```bash
-python full_agent_test/run_tests.py --api-key YOUR_OLLAMA_API_KEY
+# Use shell script (runs each test in isolated subprocess)
+./full_agent_test/run_tests.sh \
+    --api-key YOUR_API_KEY \
+    --env-notebook /path/to/notebook_env/bin/python
 ```
 
 This will:
-- Copy base notebooks from `kai_reproducibility`
-- Run Kai autonomously on each case
+- Load configuration from `configs/scenario1_config.yaml`
+- Copy base notebooks for each test
+- Run Kai autonomously on each case in isolated subprocess
 - Execute 3 replicates per case (9 total tests)
-- Save notebooks, logs, and metadata to `full_agent_test/test_outputs/`
+- Save notebooks and metadata to `full_agent_test/test_outputs/`
+
+**Why subprocess isolation?** Each test runs in a fresh Python process, preventing ChromaDB file descriptor leaks that cause "Too many open files" errors.
 
 ### 2. Analyze Results
 
@@ -47,11 +53,15 @@ Output saved to `full_agent_test/analysis/`
 full_agent_test/
 ├── __init__.py                      # Package initialization
 ├── README.md                        # This file
-├── run_tests.py                     # Test runner script
+├── run_tests.sh                     # Shell script for test orchestration
+├── run_single_test.py               # Single test executor (called by shell)
+├── read_config.py                   # YAML config reader helper
 ├── analyze_results.py               # Analysis script
 │
 ├── configs/
 │   └── scenario1_config.yaml        # Scenario 1 configuration
+│
+├── base_notebooks/                  # Symlink to kai_reproducibility base notebooks
 │
 ├── test_outputs/                    # Generated test outputs (gitignored)
 │   ├── .gitkeep
@@ -75,7 +85,9 @@ full_agent_test/
 #### Run All Tests (Default)
 
 ```bash
-python full_agent_test/run_tests.py --api-key YOUR_KEY
+./full_agent_test/run_tests.sh \
+    --api-key YOUR_KEY \
+    --env-notebook /path/to/env/bin/python
 ```
 
 Runs all 3 cases × 3 replicates = 9 tests
@@ -84,33 +96,51 @@ Runs all 3 cases × 3 replicates = 9 tests
 
 ```bash
 # Just blood and lung
-python full_agent_test/run_tests.py --api-key YOUR_KEY --cases blood lung
+./full_agent_test/run_tests.sh \
+    --api-key YOUR_KEY \
+    --env-notebook /path/to/env/bin/python \
+    --cases "blood lung"
 
 # Just breast cancer
-python full_agent_test/run_tests.py --api-key YOUR_KEY --cases breastcancer
+./full_agent_test/run_tests.sh \
+    --api-key YOUR_KEY \
+    --env-notebook /path/to/env/bin/python \
+    --cases "breastcancer"
 ```
 
 #### Run Specific Replicates
 
 ```bash
 # Run replicates 1-2 only
-python full_agent_test/run_tests.py --api-key YOUR_KEY --replicates 1-2
+./full_agent_test/run_tests.sh \
+    --api-key YOUR_KEY \
+    --env-notebook /path/to/env/bin/python \
+    --replicates 1-2
 
 # Run replicate 3 only
-python full_agent_test/run_tests.py --api-key YOUR_KEY --replicates 3-3
+./full_agent_test/run_tests.sh \
+    --api-key YOUR_KEY \
+    --env-notebook /path/to/env/bin/python \
+    --replicates 3-3
 ```
 
 #### Custom Output Directory
 
 ```bash
-python full_agent_test/run_tests.py --api-key YOUR_KEY --output my_test_run
+./full_agent_test/run_tests.sh \
+    --api-key YOUR_KEY \
+    --env-notebook /path/to/env/bin/python \
+    --output-dir my_test_run
 ```
 
 #### Override Max Iterations
 
 ```bash
 # Allow more iterations for complex cases
-python full_agent_test/run_tests.py --api-key YOUR_KEY --max-iterations 150
+./full_agent_test/run_tests.sh \
+    --api-key YOUR_KEY \
+    --env-notebook /path/to/env/bin/python \
+    --max-iterations 150
 ```
 
 ### Analyzing Results
@@ -355,7 +385,9 @@ All dependencies from main Kai installation:
 
 ```bash
 # 1. Run all tests (takes ~8-12 hours for 9 tests)
-python full_agent_test/run_tests.py --api-key YOUR_KEY
+./full_agent_test/run_tests.sh \
+    --api-key YOUR_KEY \
+    --env-notebook /path/to/env/bin/python
 
 # Monitor progress
 tail -f full_agent_test/test_outputs/full_agent_test_scenario1_blood_repeat1.log
@@ -373,11 +405,12 @@ cat full_agent_test/analysis/summary_report.txt
 
 ```bash
 # Run just one test for quick validation
-python full_agent_test/run_tests.py \
-  --api-key YOUR_KEY \
-  --cases blood \
-  --replicates 1-1 \
-  --max-iterations 50
+./full_agent_test/run_tests.sh \
+    --api-key YOUR_KEY \
+    --env-notebook /path/to/env/bin/python \
+    --cases "blood" \
+    --replicates 1-1 \
+    --max-iterations 50
 
 # Analyze
 python full_agent_test/analyze_results.py
@@ -387,10 +420,11 @@ python full_agent_test/analyze_results.py
 
 ```bash
 # Rerun just replicate 2 for all cases
-python full_agent_test/run_tests.py \
-  --api-key YOUR_KEY \
-  --replicates 2-2 \
-  --output full_agent_test/test_outputs  # Same dir to merge results
+./full_agent_test/run_tests.sh \
+    --api-key YOUR_KEY \
+    --env-notebook /path/to/env/bin/python \
+    --replicates 2-2 \
+    --output-dir full_agent_test/test_outputs  # Same dir to merge results
 
 # Reanalyze all results
 python full_agent_test/analyze_results.py
@@ -479,7 +513,10 @@ test_cases:
 
 3. Run tests:
 ```bash
-python full_agent_test/run_tests.py --api-key KEY --cases newcase
+./full_agent_test/run_tests.sh \
+    --api-key KEY \
+    --env-notebook /path/to/env/bin/python \
+    --cases "newcase"
 ```
 
 ### Custom Analysis Metrics
