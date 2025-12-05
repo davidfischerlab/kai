@@ -13,10 +13,26 @@ from kai.config.paths import LOGS_DIR
 # Initialize colorama for cross-platform colored output
 colorama.init()
 
+# Global filter that will be applied to all loggers created via setup_logger
+_GLOBAL_FILTER = None
+
+
+def set_global_filter(filter_instance: logging.Filter):
+    """
+    Set a global filter that will be applied to all loggers created via setup_logger.
+
+    This should be called BEFORE any loggers are created to ensure consistent filtering.
+
+    Args:
+        filter_instance: Filter to apply to all new loggers
+    """
+    global _GLOBAL_FILTER
+    _GLOBAL_FILTER = filter_instance
+
 
 class ColoredFormatter(logging.Formatter):
     """Custom formatter with colored output."""
-    
+
     COLORS = {
         'DEBUG': Fore.CYAN,
         'INFO': Fore.GREEN,
@@ -24,16 +40,16 @@ class ColoredFormatter(logging.Formatter):
         'ERROR': Fore.RED,
         'CRITICAL': Fore.RED + Style.BRIGHT,
     }
-    
+
     def format(self, record):
         # Add color to the level name
         levelname = record.levelname
         if levelname in self.COLORS:
             record.levelname = f"{self.COLORS[levelname]}{levelname}{Style.RESET_ALL}"
-        
+
         # Format the message
         formatted = super().format(record)
-        
+
         return formatted
 
 
@@ -71,12 +87,16 @@ def setup_logger(
     if console:
         console_handler = logging.StreamHandler(sys.stderr)
         console_handler.setLevel(logging.DEBUG)
-        
+
         # Use colored formatter for console
         console_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         console_formatter = ColoredFormatter(console_format, datefmt="%H:%M:%S")
         console_handler.setFormatter(console_formatter)
-        
+
+        # Apply global filter if set
+        if _GLOBAL_FILTER is not None:
+            console_handler.addFilter(_GLOBAL_FILTER)
+
         logger.addHandler(console_handler)
     
     # File handler
