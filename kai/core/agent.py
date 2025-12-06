@@ -13,7 +13,7 @@ from typing import Optional, Dict, Any
 
 from kai.config.settings import Settings
 from .llm_interface import LLMInterface
-from .orchestration.workflow_orchestrator import WorkflowOrchestrator
+from .orchestration.langgraph_orchestrator import LangGraphOrchestrator
 from .orchestration.vscode_communicator import VSCodeCommunicator
 from kai.retrieval import create_knowledge_base, ChromaDbManager
 from kai.utils import setup_logger
@@ -25,13 +25,13 @@ class KaiAgent:
     """
     Main entry point for the bioinformatics agent.
     
-    Provides a unified interface for bioinformatics code generation, analysis, 
-    and conversation. Uses WorkflowOrchestrator for all request processing.
+    Provides a unified interface for bioinformatics code generation, analysis,
+    and conversation. Uses LangGraphOrchestrator for all request processing.
     
     Attributes:
         llm: LLMInterface for language model interactions
         knowledge_base: ChromaDB knowledge base for RAG
-        orchestrator: WorkflowOrchestrator for tool execution and chaining
+        orchestrator: LangGraphOrchestrator for tool execution and chaining
     
     Example:
         agent = BioinformaticsAgent(llm_provider="ollama", model="gpt-oss:20b")
@@ -39,7 +39,7 @@ class KaiAgent:
     """
     llm_interface: LLMInterface
     knowledge_base: ChromaDbManager
-    orchestrator: WorkflowOrchestrator
+    orchestrator: LangGraphOrchestrator
     session_metadata: Dict[str, Any]
     settings: Settings
     vscode: VSCodeCommunicator
@@ -75,7 +75,7 @@ class KaiAgent:
         if suppress_vscode_messages:
             self.vscode._disabled = True
 
-        self.orchestrator = WorkflowOrchestrator(
+        self.orchestrator = LangGraphOrchestrator(
             llm_interface=self.llm_interface,
             knowledge_base=self.knowledge_base,
             vscode_communicator=self.vscode

@@ -1507,7 +1507,6 @@ class ReferenceWorkflowSelectionTool(StructuredPromptTool):
         - LLM sees full IDs in summaries: "scverse/scanpy-tutorials/pbmc3k.ipynb"
         - LLM returns full IDs in selected_notebooks
         - Tool converts full IDs → internal IDs for storage operations
-        - Supports both formats for backward compatibility
 
     Context Inputs:
         - putative_reference_workflow_summaries: Candidate workflows from semantic search
@@ -1796,9 +1795,10 @@ class ReferenceWorkflowCellSelectionTool(StructuredPromptTool):
             if internal_id:
                 previous_ids.add(internal_id)
 
-        # Calculate changes
+        # Calculate changes - preserve order from current_content_dict
         kept_ids = current_ids & previous_ids  # Workflows to reuse
-        new_ids = current_ids - previous_ids   # Workflows needing LLM cell selection
+        # Preserve order by filtering list instead of set difference
+        new_ids = [nid for nid in current_content_dict.keys() if nid not in previous_ids]
 
         # If no new workflows, just send UI to replace loading state
         if not new_ids:

@@ -29,7 +29,15 @@ class CodeRetrievalTool(BaseTool):
     async def execute(self, exec_context: "ExecutionContext", **kwargs) -> ToolResult:
         """Retrieve relevant knowledge via RAG."""
         # Retrieval query is a list of query strings
-        queries = exec_context.inputs.context["snippet_retrieval_query"]
+        queries = exec_context.inputs.context.get("snippet_retrieval_query")
+
+        # If no queries specified, return empty (RAG disabled or not needed)
+        if not queries:
+            return ToolResult(
+                output_ui=None,
+                output_type=ToolOutputType.NO_OUTPUT,
+                output_workflow={"rag_text": ""}
+            )
         
         try:
             # Wait for background initialization to complete for optimal performance

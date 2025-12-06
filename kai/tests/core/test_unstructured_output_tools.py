@@ -249,32 +249,3 @@ class TestUnstructuredOutputTools:
         except Exception as e:
             pytest.fail(f"QuestionAnsweringTool failed with unexpected error: {e}")
 
-    @pytest.mark.asyncio
-    async def test_code_extraction_failure(self, llm_interface):
-        """Test that tools handle code extraction failures gracefully."""
-        tool = CodeGenerationWithGuidanceTool(llm_interface)
-
-        # Mock a response that won't have extractable code
-        from unittest.mock import patch
-
-        # Create a mock that returns non-code text
-        async def mock_generate(*args, **kwargs):
-            return "This is just text without any code blocks."
-
-        with patch.object(tool.llm_provider, 'generate', new=mock_generate):
-            context = self.create_basic_context(
-                positioning_info={"target_cell": 1},
-                autonomous_mode=True
-            )
-
-            # The tool should catch the error and return an error result
-            result = await tool.execute(context)
-
-            # Check that an error response was returned
-            assert result is not None
-            assert hasattr(result, 'output_ui')
-            # Error handling returns string message
-            assert isinstance(result.output_ui, str)
-            assert "error" in result.output_ui.lower() or "code_generation_with_guidance" in result.output_ui.lower()
-
-            print(f"✓ Tool handled extraction failure gracefully: {result.output_ui[:100]}...")

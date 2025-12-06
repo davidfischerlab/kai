@@ -71,6 +71,7 @@ class TestExcludedWorkflowsMechanism:
         }
 
         mock_selector.format_notebook_context.return_value = "Formatted notebook context"
+        mock_selector.format_notebook_context_dict.return_value = {}
         return mock_selector
 
     @pytest.mark.asyncio
@@ -84,7 +85,6 @@ class TestExcludedWorkflowsMechanism:
             notebook_selector=mock_notebook_selector
         )
 
-        # Setup context with 5 notebooks
         exec_context = ExecutionContext(
             inputs=ExecutionInputs(
                 user_query="test query",
@@ -97,6 +97,13 @@ class TestExcludedWorkflowsMechanism:
                         "theislab_hrca_reproducibility_03_3_1_prepare_custom_harmony_input"
                     ],
                     "reference_workflow_ids": "scverse/scanpy-tutorials/day1_01_solutions.ipynb, saezlab/2024_EBI_GRN/3_TF_activity_inference.ipynb, theislab/transcription_factor_activity/example.ipynb, theislab/regvelo_reproducibility/1_data_preparation.ipynb, theislab/HRCA-reproducibility/03_3_1_prepare_custom_harmony_input.ipynb",
+                    "reference_workflow_content": {
+                        "scverse_scanpy_tutorials_day1_01_solutions": "unfiltered content 1",
+                        "saezlab_2024_ebi_grn_3_tf_activity_inference": "unfiltered content 2",
+                        "theislab_transcription_factor_activity_example": "unfiltered content 3",
+                        "theislab_regvelo_reproducibility_1_data_preparation": "unfiltered content 4",
+                        "theislab_hrca_reproducibility_03_3_1_prepare_custom_harmony_input": "unfiltered content 5"
+                    },
                     "execution_history": [],
                     "conversation_history": [],
                     "notebook_structure": {"cells": [], "totalCells": 0, "allCells": []},
@@ -162,6 +169,11 @@ class TestExcludedWorkflowsMechanism:
                         "theislab_transcription_factor_activity_example"
                     ],
                     "reference_workflow_ids": "scverse/scanpy-tutorials/day1_01_solutions.ipynb, saezlab/2024_EBI_GRN/3_TF_activity_inference.ipynb, theislab/transcription_factor_activity/example.ipynb",
+                    "reference_workflow_content": {
+                        "scverse_scanpy_tutorials_day1_01_solutions": "unfiltered content 1",
+                        "saezlab_2024_ebi_grn_3_tf_activity_inference": "unfiltered content 2",
+                        "theislab_transcription_factor_activity_example": "unfiltered content 3"
+                    },
                     "execution_history": [],
                     "conversation_history": [],
                     "notebook_structure": {"cells": [], "totalCells": 0, "allCells": []},
@@ -186,11 +198,11 @@ class TestExcludedWorkflowsMechanism:
         async def mock_generate(prompt, schema, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
-                return ReferenceWorkflowCellSelection(selected_cells=[0, 1])  # 2 cells
+                return ReferenceWorkflowCellSelection(selected_cells=[0, 1])  # 2 cells (valid indices)
             elif call_count[0] == 2:
                 return ReferenceWorkflowCellSelection(selected_cells=[])  # 0 cells
             else:
-                return ReferenceWorkflowCellSelection(selected_cells=[5])  # 1 cell
+                return ReferenceWorkflowCellSelection(selected_cells=[0])  # 1 cell (valid index 0)
 
         mock_llm_provider.generate_structured = mock_generate
 

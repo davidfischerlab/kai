@@ -1695,6 +1695,8 @@ The problem/question that was reasoned about is:
 
         # RAG retrieval tool returns a string directly via results["content"]
         rag_text = exec_context.inputs.context["retry_objective"]
+        if rag_text is None:
+            return ""
         return section_heading + rag_text
     
     def _build_conversation_history_section(self, exec_context: 'ExecutionContext') -> str:
@@ -1766,7 +1768,21 @@ The problem/question that was reasoned about is:
         execution_history = exec_context.inputs.context['execution_history']
         if execution_history:
             # Show last 10 executions universally to keep prompts manageable
-            history_text = "Starting from most recent:\n\n" + "\n\n".join(execution_history[:10])
+            # Handle both string format (from VSCode) and dict format (from tests)
+            formatted_history = []
+            for item in execution_history[:10]:
+                if isinstance(item, str):
+                    formatted_history.append(item)
+                elif isinstance(item, dict):
+                    # Format dict to string
+                    cell_idx = item.get('cell_index', '?')
+                    code = item.get('code', '')
+                    output = item.get('output', '')
+                    formatted_history.append(f"> Cell {cell_idx}\n>> Code:\n{code}\n>> Output:\n{output}")
+                else:
+                    formatted_history.append(str(item))
+
+            history_text = "Starting from most recent:\n\n" + "\n\n".join(formatted_history)
         else:
             history_text = "No cells have been executed yet."
         return section_heading + history_text

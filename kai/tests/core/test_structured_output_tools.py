@@ -1104,13 +1104,13 @@ class TestStructuredOutputTools:
             print(f"✓ Context properly managed and cleaned up")
             print(f"✓ UI message:\n{notebook_message}")
 
-            # Restore original method
-            tool.llm_provider.generate_structured = original_generate
-
         except Exception as e:
             pytest.fail(f"ReferenceWorkflowCellSelectionTool failed with unexpected error: {e}")
         finally:
-            # Cleanup
+            # Restore original method
+            tool.llm_provider.generate_structured = original_generate
+
+            # Cleanup storage
             import shutil
             if storage_path.exists():
                 shutil.rmtree(storage_path, ignore_errors=True)
@@ -1164,6 +1164,10 @@ class TestStructuredOutputTools:
                 reference_workflow_ids="org1/repo1/workflow1.ipynb, org2/repo2/workflow2.ipynb"
             )
             context.inputs.context["reference_workflow_internal_ids"] = ["workflow1", "workflow2"]
+            context.inputs.context["reference_workflow_content"] = {
+                "workflow1": "> Notebook ID: org1/repo1/workflow1.ipynb\n>> Cell 0\ncell 0\n>> Cell 1\ncell 1\n>> Cell 2\ncell 2\n>> Cell 3\ncell 3\n>> Cell 4\ncell 4",
+                "workflow2": "> Notebook ID: org2/repo2/workflow2.ipynb\n>> Cell 0\ncell 0\n>> Cell 1\ncell 1\n>> Cell 2\ncell 2\n>> Cell 3\ncell 3\n>> Cell 4\ncell 4\n>> Cell 5\ncell 5\n>> Cell 6\ncell 6\n>> Cell 7\ncell 7\n>> Cell 8\ncell 8\n>> Cell 9\ncell 9"
+            }
 
             # Mock LLM to return different selections for each notebook
             call_count = 0
@@ -1196,12 +1200,13 @@ class TestStructuredOutputTools:
             print(f"✓ Multiple notebook test passed")
             print(f"✓ UI output:\n{ui_text}")
 
-            # Restore
-            tool.llm_provider.generate_structured = original_generate
-
         except Exception as e:
             pytest.fail(f"Multiple notebook test failed: {e}")
         finally:
+            # Restore mock
+            tool.llm_provider.generate_structured = original_generate
+
+            # Cleanup storage
             import shutil
             if storage_path.exists():
                 shutil.rmtree(storage_path, ignore_errors=True)

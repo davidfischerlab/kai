@@ -47,6 +47,13 @@ class TestCitedWorkflowProtection:
             "scverse_202504_workshop_gscn_nb5_trajectory_inference": {
                 "cells": [],
                 "metadata": {
+                    "source_repository": "scverse/202504_workshop_gscn",
+                    "workflow_filename": "nb5_trajectory_inference.ipynb"
+                }
+            },
+            "scverse_202504_workshop_GSCN_nb5_trajectory_inference": {
+                "cells": [],
+                "metadata": {
                     "source_repository": "scverse/202504_workshop_GSCN",
                     "workflow_filename": "nb5_trajectory_inference.ipynb"
                 }
@@ -59,6 +66,11 @@ class TestCitedWorkflowProtection:
 
         mock_selector.get_selected_notebook_content = get_selected
         mock_selector.format_notebook_context.return_value = "Formatted workflow context"
+
+        def format_dict(selection_data):
+            return {nb_id: "content" for nb_id in selection_data.get("selected_notebooks", [])}
+
+        mock_selector.format_notebook_context_dict = format_dict
         return mock_selector
 
     def test_extract_cited_workflows(self, mock_llm_interface, mock_notebook_selector):
@@ -129,7 +141,7 @@ class TestCitedWorkflowProtection:
                         },
                         {
                             "id": 3,
-                            "task": "Trajectory [adapted from: 'scverse/202504_workshop_GSCN/nb5_trajectory_inference.ipynb', cells: 20-23]",
+                            "task": "Trajectory [adapted from: 'scverse/202504_workshop_gscn/nb5_trajectory_inference.ipynb', cells: 20-23]",
                             "status": "pending"
                         }
                     ]
@@ -152,8 +164,8 @@ class TestCitedWorkflowProtection:
         # Process the result - should re-add the missing cited workflow
         result = tool._process_structured_result(structured_result, exec_context)
 
-        # Verify all 3 cited workflows are in the final result
-        internal_ids = result.output_workflow["reference_workflow_internal_ids"]
+        # Verify all 3 cited workflows are in the final result (check dict keys)
+        internal_ids = set(result.output_workflow["reference_workflow_content"].keys())
         assert len(internal_ids) == 3
         assert "scverse_scanpy_tutorials_day1_01_solutions" in internal_ids
         assert "theislab_transcription_factor_activity_example" in internal_ids  # Re-added!
@@ -163,7 +175,7 @@ class TestCitedWorkflowProtection:
         full_ids = result.output_workflow["reference_workflow_ids"]
         assert "scverse/scanpy-tutorials/day1_01_solutions.ipynb" in full_ids
         assert "theislab/transcription_factor_activity/example.ipynb" in full_ids
-        assert "scverse/202504_workshop_GSCN/nb5_trajectory_inference.ipynb" in full_ids
+        assert "scverse/202504_workshop_gscn/nb5_trajectory_inference.ipynb" in full_ids
 
     def test_llm_selection_without_citations(self, mock_llm_interface, mock_notebook_selector):
         """Test normal case where LLM correctly keeps cited workflows."""
@@ -200,7 +212,7 @@ class TestCitedWorkflowProtection:
         result = tool._process_structured_result(structured_result, exec_context)
 
         # Should have exactly the 1 cited workflow
-        internal_ids = result.output_workflow["reference_workflow_internal_ids"]
+        internal_ids = set(result.output_workflow["reference_workflow_content"].keys())
         assert len(internal_ids) == 1
         assert "scverse_scanpy_tutorials_day1_01_solutions" in internal_ids
 
@@ -235,7 +247,7 @@ class TestCitedWorkflowProtection:
                         {"id": 6, "task": "[reasoning] Summarize TF results", "status": "pending"},
                         {
                             "id": 7,
-                            "task": "Compute diffusion map [adapted from: 'scverse/202504_workshop_GSCN/nb5_trajectory_inference.ipynb', cells: 20-23]",
+                            "task": "Compute diffusion map [adapted from: 'scverse/202504_workshop_gscn/nb5_trajectory_inference.ipynb', cells: 20-23]",
                             "status": "pending"
                         }
                     ]
@@ -260,7 +272,7 @@ class TestCitedWorkflowProtection:
         result = tool._process_structured_result(structured_result, exec_context)
 
         # Verify all 3 cited workflows are present
-        internal_ids = result.output_workflow["reference_workflow_internal_ids"]
+        internal_ids = set(result.output_workflow["reference_workflow_content"].keys())
         assert len(internal_ids) == 3, f"Expected 3 workflows, got {len(internal_ids)}: {internal_ids}"
         assert "scverse_scanpy_tutorials_day1_01_solutions" in internal_ids
         assert "theislab_transcription_factor_activity_example" in internal_ids, "TF activity workflow should be re-added!"
