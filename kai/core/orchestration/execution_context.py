@@ -69,12 +69,26 @@ class ExecutionContext:
             excluded_workflows=state.get("excluded_workflows", [])
         )
 
-        # Build session metadata
-        session_metadata = {
-            "session_id": state.get("session_id", ""),
-            "request_id": state.get("request_id", ""),
-            "autonomous_mode": state.get("autonomous_mode", False),
-        }
+        # Build session metadata - extract from state.session_metadata if present,
+        # otherwise build from top-level state fields (for backward compatibility)
+        if "session_metadata" in state and isinstance(state["session_metadata"], dict):
+            # Use nested session_metadata dict (from context passed by VSCode/Jupyter)
+            session_metadata = state["session_metadata"].copy()
+            # Ensure autonomous_mode is present (might be at top level)
+            if "autonomous_mode" not in session_metadata:
+                session_metadata["autonomous_mode"] = state.get("autonomous_mode", False)
+        else:
+            # Build from top-level state fields (for tests and simple cases)
+            session_metadata = {
+                "session_id": state.get("session_id", ""),
+                "request_id": state.get("request_id", ""),
+                "autonomous_mode": state.get("autonomous_mode", False),
+                "session_timestamp": state.get("session_timestamp", ""),
+                "iteration_timestamp": state.get("iteration_timestamp", ""),
+                "iteration_counter": state.get("iteration_counter", 0),
+                "notebook_uri": state.get("notebook_uri", ""),
+                "active": state.get("active", False),
+            }
 
         return cls(inputs=inputs, session_metadata=session_metadata)
 

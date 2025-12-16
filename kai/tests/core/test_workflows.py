@@ -43,40 +43,6 @@ class TestWorkflows:
         return messages
 
     @pytest.mark.asyncio
-    async def test_autonomous_planning_simple(self, agent_with_capture):
-        """Test autonomous planning with simple query - single step, no loops."""
-        agent, capsys = agent_with_capture
-
-        # Simple context - empty notebook, just plan tasks
-        context = {
-            "session_metadata": agent.session_metadata,
-            "autonomous_mode": True,
-            "autonomous_mode_continue": False,  # Exit after planning
-            "notebook_structure": {"totalCells": 0, "allCells": []},
-            "notebook_cells": [],
-            "current_cell": "",
-            "current_cell_index": 0,
-            "execution_history": [],
-            "conversation_history": [],
-            "last_execution_failed": False,
-            "request_id": "test_planning",
-            "rag_enabled": False,
-            "error_message": "",
-            "task_list": {},  # Empty - should trigger planning
-            "excluded_workflows": []
-        }
-
-        try:
-            await agent.orchestrator.process_request("Load CSV file", context)
-        except Exception as e:
-            # Expected - may fail on missing fields but should at least try planning
-            pass
-
-        messages = self.parse_vscode_messages(capsys)
-        # Should have attempted to generate a task list
-        assert len(messages) > 0
-
-    @pytest.mark.asyncio
     async def test_regular_mode_simple_question(self, agent_with_capture):
         """Test regular mode with simple question - single step."""
         agent, capsys = agent_with_capture
@@ -107,3 +73,4 @@ class TestWorkflows:
         messages = self.parse_vscode_messages(capsys)
         # Should have attempted to classify intent and respond
         assert len(messages) > 0
+

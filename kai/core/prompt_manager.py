@@ -890,7 +890,7 @@ In the output:
         },
 
         PromptScenario.CODE_GENERATION_WITH_GUIDANCE: {
-            "system": "code_generation_with_guidance", 
+            "system": "code_generation_with_guidance",
             "user_template": """{constant_scenario_prompt}
 
 This code generation is guided by a specific task objective from an active task list.
@@ -898,7 +898,7 @@ Adhere to these rules:
 - Focus on implementing the specific task objective provided
 - Generate code that directly addresses the task goal
 - Consider execution context and previous results from the notebook
-- If you are given citations of positions in reference workflows to adapt as part of the guidance, 
+- If you are given citations of positions in reference workflows to adapt as part of the guidance,
   focus the scope of the code generation on these positions in reference notebooks and try to reflect this code as closely as reasonable.
   Try to implement the cited code cells from the references as directly as possible, adhering to the following rules and guidelines.
   Often, the more similar you code is to the code presented in these reference cells, the more transparent your analysis will be.
@@ -1398,6 +1398,10 @@ The problem/question that was reasoned about is:
         """This section is made available for reasoning critique."""
         if "reasoning_response" in exec_context.inputs.context.keys():
             previous_reasoning = exec_context.inputs.context["reasoning_response"]
+            # Handle None values
+            if previous_reasoning is None:
+                previous_reasoning = "(No previous reasoning)"
+
             task_text = [
                 "\n====== This is the proposed reasoning:",
                 previous_reasoning,
@@ -1405,6 +1409,10 @@ The problem/question that was reasoned about is:
             ]
             if "reasoning_critique" in exec_context.inputs.context.keys():
                 reasoning_critique = exec_context.inputs.context["reasoning_critique"]
+                # Handle None values
+                if reasoning_critique is None:
+                    reasoning_critique = "(No critique)"
+
                 task_text.extend([
                     "\nThis proposed reasoning is an update that was based on your feedback the last iteration:",
                     "====== This was your feedback in the previous iteration that led to this new reasoning:",
@@ -1423,6 +1431,13 @@ The problem/question that was reasoned about is:
             "reasoning_response" in exec_context.inputs.context.keys()):
             previous_reasoning = exec_context.inputs.context["reasoning_response"]
             reasoning_critique = exec_context.inputs.context["reasoning_critique"]
+
+            # Handle None values
+            if previous_reasoning is None:
+                previous_reasoning = "(No previous reasoning)"
+            if reasoning_critique is None:
+                reasoning_critique = "(No critique)"
+
             task_text = [
                 "\n====== This is the previous reasoning:",
                 previous_reasoning,
@@ -1453,6 +1468,9 @@ The problem/question that was reasoned about is:
         task_text = []
         if "task_text_old" in exec_context.inputs.context.keys():
             task_text_old = exec_context.inputs.context["task_text_old"]
+            # Handle None values
+            if task_text_old is None:
+                task_text_old = "(No previous task list)"
             task_text.extend([
                 "\nThis is the previous version of the task list:\n",
                 task_text_old
@@ -1464,6 +1482,9 @@ The problem/question that was reasoned about is:
         ])
         if "task_list_critique" in exec_context.inputs.context.keys():
             task_list_critique = exec_context.inputs.context["task_list_critique"]
+            # Handle None values
+            if task_list_critique is None:
+                task_list_critique = "(No critique)"
             task_text.extend([
                 "\nYou provided the following feedback on the previous version that led to this update:\n",
                 task_list_critique,
@@ -1477,6 +1498,9 @@ The problem/question that was reasoned about is:
         if "task_list_critique" in exec_context.inputs.context.keys():
             task_text_new = format_task_list(exec_context.inputs.task_list)
             task_list_critique = exec_context.inputs.context["task_list_critique"]
+            # Handle None values
+            if task_list_critique is None:
+                task_list_critique = "(No critique)"
             task_text = [
                 "\nThis is the current version of the task list:\n",
                 task_text_new,
@@ -1484,7 +1508,7 @@ The problem/question that was reasoned about is:
                 task_list_critique,
                 "\nImprove the current version of the task list based on this feedback.",
             ]
-        else: 
+        else:
             task_text = [""]
         task_text = "\n".join(task_text)
         return task_text
@@ -1492,11 +1516,18 @@ The problem/question that was reasoned about is:
     def _build_task_list_update_critique_instructions_section(self, exec_context: 'ExecutionContext') -> str:
         """This section is made available for initial planning if a critique was given (after the first iteration)."""
         if "task_list_update_rationale" in exec_context.inputs.context.keys():
-            # If task_list_update_rationale is set, task_text_old is also given 
-            # because the update was performed on an existing task list. 
+            # If task_list_update_rationale is set, task_text_old is also given
+            # because the update was performed on an existing task list.
             task_text_old = exec_context.inputs.context["task_text_old"]
             task_text_new = format_task_list(exec_context.inputs.task_list)
             task_list_update_rationale = exec_context.inputs.context["task_list_update_rationale"]
+
+            # Handle None values
+            if task_text_old is None:
+                task_text_old = "(No previous task list)"
+            if task_list_update_rationale is None:
+                task_list_update_rationale = "(No rationale)"
+
             task_text = [
                 "\nThis is the original task list:\n",
                 task_text_old,
@@ -1507,6 +1538,9 @@ The problem/question that was reasoned about is:
             ]
             if "autonomous_update_critique" in exec_context.inputs.context.keys():
                 autonomous_update_critique = exec_context.inputs.context["autonomous_update_critique"]
+                # Handle None values
+                if autonomous_update_critique is None:
+                    autonomous_update_critique = "(No critique)"
                 task_text.extend([
                     "\nYou provided the following feedback on the previous version that led to this update:\n",
                     autonomous_update_critique,
@@ -1519,11 +1553,18 @@ The problem/question that was reasoned about is:
         
     def _build_task_list_update_instructions_section(self, exec_context: 'ExecutionContext') -> str:
         if "autonomous_update_critique" in exec_context.inputs.context.keys():
-            # If autonomous_update_critique is set, task_text_old is also given 
-            # because the critique was performed on an update to an existing task list. 
+            # If autonomous_update_critique is set, task_text_old is also given
+            # because the critique was performed on an update to an existing task list.
             task_text_old = exec_context.inputs.context["task_text_old"]
             task_text_new = format_task_list(exec_context.inputs.task_list)
             autonomous_update_critique = exec_context.inputs.context["autonomous_update_critique"]
+
+            # Handle None values
+            if task_text_old is None:
+                task_text_old = "(No previous task list)"
+            if autonomous_update_critique is None:
+                autonomous_update_critique = "(No critique)"
+
             task_text = "\n".join([
                 "\nThis is the original task list:\n",
                 task_text_old,
@@ -1679,6 +1720,11 @@ The problem/question that was reasoned about is:
 
         # RAG retrieval tool returns a string directly via results["content"]
         rag_text = exec_context.inputs.context["rag_retrieval"]
+
+        # Return empty if rag_text is None or empty (transient field cleared)
+        if not rag_text:
+            return ""
+
         return section_heading + rag_text
     
     def _build_retry_objective_section(self, exec_context: 'ExecutionContext') -> str:

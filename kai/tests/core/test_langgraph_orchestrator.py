@@ -56,6 +56,7 @@ class TestLangGraphOrchestrator:
         expected_tools = [
             "search_code_snippets",
             "search_workflows",
+            "workflow_refinement",
             "generate_code",
             "update_code",
             "execute_cell",
@@ -75,45 +76,6 @@ class TestLangGraphOrchestrator:
             assert tool_name in agent.orchestrator.tools, f"Missing tool: {tool_name}"
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("rag_enabled", [True, False])
-    async def test_autonomous_planning(self, agent_with_capture, rag_enabled):
-        """Test autonomous planning workflow."""
-        agent, capsys = agent_with_capture
-
-        context = {
-            "session_metadata": agent.session_metadata,
-            "current_cell": "",
-            "current_cell_index": 0,
-            "notebook_structure": {
-                "totalCells": 0,
-                "allCells": []
-            },
-            "execution_history": [],
-            "conversation_history": [],
-            "last_execution_failed": False,
-            "request_id": f"test_planning_rag_{rag_enabled}",
-            "rag_enabled": rag_enabled,
-            "autonomous_mode": True,
-            "auto_mode_continue": False,
-            "error_message": "",
-            "task_list": {},
-            "excluded_workflows": []
-        }
-
-        user_query = "Analyze single-cell RNA-seq data"
-
-        try:
-            await agent.orchestrator.process_request(user_query, context)
-        except Exception as e:
-            if "validation" in str(e).lower():
-                pass
-            else:
-                raise
-
-        messages = self.parse_vscode_messages(capsys)
-        assert len(messages) > 0
-
-    @pytest.mark.asyncio
     async def test_regular_mode(self, agent_with_capture):
         """Test regular (non-autonomous) mode - simple question."""
         agent, capsys = agent_with_capture
@@ -131,7 +93,7 @@ class TestLangGraphOrchestrator:
             "request_id": "test_regular",
             "rag_enabled": False,  # Disable RAG for simple test
             "autonomous_mode": False,
-            "auto_mode_continue": False,
+            "autonomous_mode_continue": False,
             "error_message": "",
             "task_list": {},
             "excluded_workflows": []

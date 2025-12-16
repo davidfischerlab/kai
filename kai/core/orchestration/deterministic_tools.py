@@ -33,12 +33,19 @@ class CodeRetrievalTool(BaseTool):
 
         # If no queries specified, return empty (RAG disabled or not needed)
         if not queries:
+            logger.debug("[RAG] No retrieval queries specified, skipping RAG")
             return ToolResult(
                 output_ui=None,
                 output_type=ToolOutputType.NO_OUTPUT,
-                output_workflow={"rag_text": ""}
+                output_workflow={"rag_retrieval": ""}  # Use rag_retrieval field so router knows RAG ran
             )
-        
+
+        # Log the queries being searched
+        if isinstance(queries, list):
+            logger.info(f"[RAG] Searching with {len(queries)} queries: {queries[0][:100]}..." if queries else "[RAG] Empty query list")
+        else:
+            logger.info(f"[RAG] Searching with query: {str(queries)[:100]}...")
+
         try:
             # Wait for background initialization to complete for optimal performance
             # This ensures collection embeddings are cached before the search
@@ -47,8 +54,25 @@ class CodeRetrievalTool(BaseTool):
 
             # Perform RAG retrieval
             results = await self.knowledge_base.search(queries, n_results=10)
-            
+
             if results:
+                # Log which notebooks/collections were retrieved
+                metadata = results.get("metadata", [])
+                if metadata:
+                    sources = set()
+                    for item in metadata:
+                        # Extract notebook/collection identifiers
+                        if isinstance(item, dict):
+                            source = item.get("source") or item.get("collection") or item.get("notebook_id")
+                            if source:
+                                sources.add(source)
+                    if sources:
+                        logger.info(f"[RAG] Retrieved {len(metadata)} snippets from {len(sources)} sources: {', '.join(sorted(sources)[:5])}")
+                    else:
+                        logger.info(f"[RAG] Retrieved {len(metadata)} snippets")
+                else:
+                    logger.info(f"[RAG] Retrieved snippets (no metadata)")
+
                 # Log successful RAG results - pass the actual content string
                 self._log_rag_query_if_enabled(queries, exec_context, "success", results["content"])
 
@@ -229,18 +253,21 @@ class MarkNextTaskActiveTool(BaseTool):
         # Find the first non-completed task and mark it as active
         # Ignore cases in which all are completed / active
         active_task_description = ""
+        active_task_dict = None
 
         i = 0
         for i, task in enumerate(exec_context.inputs.task_list['tasks']):
             if task.get('status') == 'active':
                 # There is already an active task
                 active_task_description = task.get('task', '')
+                active_task_dict = task
                 break
             if task.get('status') == 'pending':
                 # Update the task status
                 task['status'] = 'active'
                 active_task_description = task.get('task', '')
-                logger.info(f"🎯 Marking task {task.get('id')} as active: {active_task_description[:50]}")
+                active_task_dict = task
+                logger.info(f"Marking task {task.get('id')} as active: {active_task_description[:75]}")
                 break
         if i < len(exec_context.inputs.task_list['tasks']) - 1:
             next_pending_task_objective = exec_context.inputs.task_list['tasks'][i + 1]["task"]
@@ -258,15 +285,111 @@ class MarkNextTaskActiveTool(BaseTool):
         # Prepare workflow output
         workflow_output = {
             "task_list": exec_context.inputs.task_list,
-            "active_task_objective": active_task_description,
+            "active_task": active_task_dict,  # Full task dict (for router)
+            "active_task_objective": active_task_description,  # String description (legacy)
             "is_reasoning_task": is_reasoning_task,
             "next_pending_task_objective": next_pending_task_objective,
+            "next_task_activated": True  # For deterministic router phase tracking
         }
 
         return ToolResult(
             output_ui=vscode_response,
             output_type=ToolOutputType.TASK_LIST_DISPLAY,
             output_workflow=workflow_output
+        )
+
+
+class SetPositioningFromLastCellTool(BaseTool):
+    """Set positioning_info from last_cell_modified_in_auto_mode.
+
+    Matches kai_dev behavior: in standard continuation and error recovery,
+    positioning is determined by the last modified cell, NOT the LLM.
+    This ensures we add/replace at the correct position after cells have been inserted.
+
+    Use cases:
+    - Standard continue (success): Position at last modified cell to add after it
+    - Standard retry (error): Position at last modified cell to replace it
+    - NOT used for: First execution (no last_cell yet) or backtracking (indices changed)
+
+    **UI Returns:**
+    - `output_type`: NO_OUTPUT - internal positioning tool
+
+    **Workflow Returns:**
+    - `positioning_info`: Dict with target_cell from last_cell_modified_in_auto_mode
+    """
+
+    def __init__(self):
+        super().__init__("set_positioning_from_last_cell")
+
+    async def execute(self, exec_context: "ExecutionContext", **kwargs) -> ToolResult:
+        """Set positioning from last cell modified in auto mode."""
+        last_cell = exec_context.inputs.context.get("last_cell_modified_in_auto_mode")
+
+        if last_cell is None:
+            # Fallback to error cell if available (for retry scenarios)
+            error_cell = exec_context.inputs.context.get("error_cell_index", -1)
+            if error_cell >= 0:
+                last_cell = error_cell
+                logger.info(f"[SET_POSITIONING] Using error_cell_index as fallback: {error_cell}")
+            else:
+                # This shouldn't happen in normal flow - log warning
+                logger.warning("[SET_POSITIONING] No last_cell_modified_in_auto_mode or error_cell_index found")
+                # Ultimate fallback - use last cell in notebook
+                notebook_structure = exec_context.inputs.context.get("notebook_structure", {})
+                total_cells = notebook_structure.get("totalCells", 0)
+                last_cell = max(0, total_cells - 1)
+                logger.info(f"[SET_POSITIONING] Using notebook last cell as fallback: {last_cell}")
+
+        positioning_info = {"target_cell": last_cell}
+        logger.info(f"[SET_POSITIONING] Set positioning to cell {last_cell}")
+
+        return ToolResult(
+            output_ui={},
+            output_type=ToolOutputType.NO_OUTPUT,
+            output_workflow={"positioning_info": positioning_info}
+        )
+
+
+class IncrementPositioningTool(BaseTool):
+    """Increment positioning_info target_cell by 1.
+
+    Used after adding a new cell (e.g., reasoning cell) so that subsequent
+    operations (like critique regeneration) target the NEW cell, not the original.
+
+    Matches kai_dev lines 497-498:
+        exec_context.inputs.context["positioning_info"] = {
+            "target_cell": exec_context.inputs.context["positioning_info"]["target_cell"] + 1
+        }
+
+    **UI Returns:**
+    - `output_type`: NO_OUTPUT - internal positioning tool
+
+    **Workflow Returns:**
+    - `positioning_info`: Dict with target_cell incremented by 1
+    """
+
+    def __init__(self):
+        super().__init__("increment_positioning")
+
+    async def execute(self, exec_context: "ExecutionContext", **kwargs) -> ToolResult:
+        """Increment positioning target_cell by 1."""
+        positioning_info = exec_context.inputs.context.get("positioning_info", {})
+        current_target = positioning_info.get("target_cell", 0)
+        new_target = current_target + 1
+
+        new_positioning = {"target_cell": new_target}
+        logger.info(
+            f"[INCREMENT_POSITIONING] Incremented positioning "
+            f"from {current_target} to {new_target}"
+        )
+
+        return ToolResult(
+            output_ui={},
+            output_type=ToolOutputType.NO_OUTPUT,
+            output_workflow={
+                "positioning_info": new_positioning,
+                "reasoning_positioning_incremented": True  # Prevent double-increment
+            }
         )
 
 
@@ -483,6 +606,11 @@ class CellDeletionTool(BaseTool):
         # Calculate index translation mapping for remaining cells
         index_translation = self._calculate_index_translation(cells_to_delete)
 
+        # Log cell deletion
+        deleted_list = sorted(cells_to_delete)
+        cells_str = ", ".join(str(c) for c in deleted_list)
+        logger.info(f"Deleted {len(deleted_list)} cells: {cells_str}")
+
         # Create output dict with all necessary data for VSCode
         output_data = {
             "text": f"Deleted cells: {sorted(cells_to_delete)}",
@@ -496,7 +624,8 @@ class CellDeletionTool(BaseTool):
             output_type=ToolOutputType.EXECUTE_ONLY,
             output_workflow={
                 "deleted_cells": sorted(cells_to_delete),
-                "index_translation": index_translation
+                "index_translation": index_translation,
+                "cells_deleted": True,  # For deterministic router phase tracking
             }
         )
 

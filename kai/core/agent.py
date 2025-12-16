@@ -14,7 +14,7 @@ from typing import Optional, Dict, Any
 from kai.config.settings import Settings
 from .llm_interface import LLMInterface
 from .orchestration.langgraph_orchestrator import LangGraphOrchestrator
-from .orchestration.vscode_communicator import VSCodeCommunicator
+from .orchestration.ui_communicator import UICommunicator
 from kai.retrieval import create_knowledge_base, ChromaDbManager
 from kai.utils import setup_logger
 
@@ -42,7 +42,7 @@ class KaiAgent:
     orchestrator: LangGraphOrchestrator
     session_metadata: Dict[str, Any]
     settings: Settings
-    vscode: VSCodeCommunicator
+    vscode: UICommunicator
     
     def __init__(
         self,
@@ -52,10 +52,11 @@ class KaiAgent:
         settings: Optional[Settings] = None,
         api_key: Optional[str] = None,
         suppress_vscode_messages: bool = False,  # Suppress all VSCode JSON messages (for Jupyter interface)
+        max_task_planning_iterations: Optional[int] = None,  # Max planning iterations (None = use orchestrator default)
     ):
         self.settings = settings or Settings.from_env()
         knowledge_path = knowledge_path or self.settings.KNOWLEDGE_BASE_PATH
-        
+
         # Initialize core components
         self.llm_interface = LLMInterface(provider=llm_provider, model=model, settings=self.settings, api_key=api_key)
         self.knowledge_base = create_knowledge_base(knowledge_path, self.settings)
@@ -63,10 +64,10 @@ class KaiAgent:
         # Start background initialization of knowledge base caches
         # This ensures collection embeddings are ready when first RAG query arrives
         self.knowledge_base.start_background_initialization()
-        
+
         # Create shared VSCode communicator for centralized message control
-        from .orchestration.vscode_communicator import VSCodeCommunicator
-        self.vscode = VSCodeCommunicator()
+        from .orchestration.ui_communicator import UICommunicator
+        self.vscode = UICommunicator()
 
         # Remember suppression preference (for Jupyter interface)
         self._suppress_vscode_messages = suppress_vscode_messages
@@ -75,11 +76,16 @@ class KaiAgent:
         if suppress_vscode_messages:
             self.vscode._disabled = True
 
-        self.orchestrator = LangGraphOrchestrator(
-            llm_interface=self.llm_interface,
-            knowledge_base=self.knowledge_base,
-            vscode_communicator=self.vscode
-        )
+        # Build orchestrator kwargs, only passing max_task_planning_iterations if explicitly set
+        orchestrator_kwargs = {
+            "llm_interface": self.llm_interface,
+            "knowledge_base": self.knowledge_base,
+            "ui_communicator": self.vscode,
+        }
+        if max_task_planning_iterations is not None:
+            orchestrator_kwargs["max_task_planning_iterations"] = max_task_planning_iterations
+
+        self.orchestrator = LangGraphOrchestrator(**orchestrator_kwargs)
         
         # Autonomous session metadata - agent owns all session state
         self.session_metadata = {
@@ -89,7 +95,7 @@ class KaiAgent:
             "notebook_uri": None,       # Captured once, persisted
             "iteration_counter": 0      # Increments each continue
         }
-        self.orchestrator._send_message(f"Initializing turbo mode: {'ENABLED' if self.llm_interface.provider_name == 'ollama-turbo' else 'DISABLED'}")
+        self.orchestrator._send_message(f"[KAI] Initializing turbo mode: {'ENABLED' if self.llm_interface.provider_name == 'ollama-turbo' else 'DISABLED'}")
         
     def is_autonomous_active(self, session_id: Optional[str] = None) -> bool:
         """Check if autonomous session is currently active."""
@@ -110,14 +116,13 @@ class KaiAgent:
                 "notebook_uri": None,
                 "iteration_counter": 0
             })
-            # Reset orchestrator states:
-            self.orchestrator.reset_states()
+            # LangGraph checkpoint handles state cleanup automatically
 
             import json
             import sys
             msg = {
                 "type": "console_log",
-                "message": f"Terminated autonomous session: {session_id} (reason: {reason})"
+                "message": f"[KAI] Terminated autonomous session: {session_id} (reason: {reason})"
             }
             print(json.dumps(msg))
             sys.stdout.flush()
@@ -171,7 +176,7 @@ class KaiAgent:
             
             # Get notebook URI from original contexts
             notebook_uri = context.get('notebookUri')
-            
+
             self.session_metadata.update({
                 "active": True,
                 "session_id": session_id,
@@ -189,31 +194,44 @@ class KaiAgent:
         context_data = {
             # Request data
             'request_id': context.get('request_id'),
-            
+
             # Execution context
             'execution_history': context.get('executionHistory', []),
             'conversation_history': context.get('conversationHistory', []),
             'notebook_structure': context.get('notebookStructure', {'totalCells': 0, 'allCells': []}),
-            
-            # Current state  
+
+            # Current state
             'current_cell': context.get('currentCell'),  # Content of current cell
             'current_cell_index': context.get('currentCellIndex'),  # Index of current cell
-            
+
             # Error information - provide defaults so orchestrator can use direct access
-            'error_cell_index': context.get('errorCellIndex', None), 
+            'error_cell_index': context.get('errorCellIndex', None),
             'execution_result': context.get('executionResult', ''),
             'last_execution_failed': context.get('lastExecutionFailed', False),
-            
+
             # Autonomous mode flags
             'autonomous_mode': context.get('autonomousMode', False),
-            'auto_mode_continue': context.get('autonomousModeContinue', False),
-            'auto_mode_termination': context.get('autonomousModeTermination', False),
+            'autonomous_mode_continue': context.get('autonomousModeContinue', False),
+            'autonomous_mode_termination': context.get('autonomousModeTermination', False),
             'last_cell_modified_in_auto_mode': context.get('lastCellModifiedInAutoMode', None),
+
+            # Task management
+            'task_list': context.get('taskList', {}),
+            'excluded_workflows': context.get('excludedWorkflows', []),
 
             # Backend details
             'turbo_enabled': context.get('turboEnabled', False),
             'rag_enabled': context.get('ragEnabled', False),
         }
+
+        # Initialize planning state for reference workflow selection on first iteration
+        # (subsequent iterations get it from checkpointer)
+        if not context_data['autonomous_mode_continue']:
+            context_data['retrieval_queries'] = [user_input]
+            context_data['planning_phase'] = None  # Will be set by router on first routing decision
+            context_data['workflow_retrieval_iteration'] = 0  # Start at 0, incremented by search_workflows tool
+            context_data['task_planning_iteration'] = -1  # Start at -1, first increment gives 0 (matching kai_dev's for loop)
+            logger.debug(f"[AGENT] Initialized planning state: retrieval_queries with user_input (len={len(user_input)})")
 
         # Parse error messages:
         # Note: need to use same output separating strings as in VSCode extension: formatCellOutputToString
@@ -242,7 +260,7 @@ class KaiAgent:
         context_data['session_metadata'] = self.session_metadata.copy()
 
         # Handle stop request
-        if context_data['auto_mode_termination']:
+        if context_data['autonomous_mode_termination']:
             self.terminate_autonomous_session("user_stop")
             return {"text": "Autonomous session stopped by user.", "intent": "stop"}, session_id
         

@@ -159,9 +159,15 @@ class BasePromptTool(BaseTool):
                 import urllib.parse
                 parsed_uri = urllib.parse.urlparse(notebook_uri)
                 if parsed_uri.path:
-                    notebook_name = parsed_uri.path.split('/')[-1]  # Get filename
+                    path_parts = parsed_uri.path.split('/')
+                    notebook_name = path_parts[-1]  # Get filename
                     if notebook_name:  # Ensure we have a valid filename
-                        notebook_identifier = (notebook_name
+                        # Add full_agent_test prefix if this is a full_agent_test notebook
+                        if 'full_agent_test' in path_parts:
+                            notebook_identifier = f"full_agent_test/{notebook_name}"
+                        else:
+                            notebook_identifier = notebook_name
+                        notebook_identifier = (notebook_identifier
                                                 .replace('.', '_')
                                                 .replace(' ', '_'))
             except Exception as parse_error:
@@ -219,7 +225,7 @@ class BasePromptTool(BaseTool):
             f.write("=" * 80 + "\n")
             f.write(user_prompt)
             f.write("\n" + "=" * 80 + "\n")
-        return filepath
+        return str(filepath)
 
 
 class StructuredPromptTool(BasePromptTool):
@@ -325,9 +331,15 @@ class StructuredPromptTool(BasePromptTool):
                 import urllib.parse
                 parsed_uri = urllib.parse.urlparse(notebook_uri)
                 if parsed_uri.path:
-                    notebook_name = parsed_uri.path.split('/')[-1]  # Get filename
+                    path_parts = parsed_uri.path.split('/')
+                    notebook_name = path_parts[-1]  # Get filename
                     if notebook_name:  # Ensure we have a valid filename
-                        notebook_identifier = (notebook_name
+                        # Add full_agent_test prefix if this is a full_agent_test notebook
+                        if 'full_agent_test' in path_parts:
+                            notebook_identifier = f"full_agent_test/{notebook_name}"
+                        else:
+                            notebook_identifier = notebook_name
+                        notebook_identifier = (notebook_identifier
                                                 .replace('.', '_')
                                                 .replace(' ', '_'))
             except Exception as parse_error:
@@ -490,9 +502,15 @@ class UnstructuredPromptTool(BasePromptTool):
                 import urllib.parse
                 parsed_uri = urllib.parse.urlparse(notebook_uri)
                 if parsed_uri.path:
-                    notebook_name = parsed_uri.path.split('/')[-1]  # Get filename
+                    path_parts = parsed_uri.path.split('/')
+                    notebook_name = path_parts[-1]  # Get filename
                     if notebook_name:  # Ensure we have a valid filename
-                        notebook_identifier = (notebook_name
+                        # Add full_agent_test prefix if this is a full_agent_test notebook
+                        if 'full_agent_test' in path_parts:
+                            notebook_identifier = f"full_agent_test/{notebook_name}"
+                        else:
+                            notebook_identifier = notebook_name
+                        notebook_identifier = (notebook_identifier
                                                 .replace('.', '_')
                                                 .replace(' ', '_'))
             except Exception as parse_error:
@@ -604,14 +622,24 @@ class TaskListGenerationTool(StructuredPromptTool):
         if len(task_list["tasks"]) == 0:
             raise Exception("Generated task list did not include any tasks.")
 
+        # Log task generation summary with iteration counter
+        current_iteration = exec_context.inputs.context.get("task_planning_iteration", 0)
+        logger.info(f"Generated task list with {len(task_list['tasks'])} tasks")
+
         # Validate task list format
         validate_task_list_format(task_list["tasks"], "TaskListGenerationTool")
 
         json_text = json.dumps(task_list)
 
+        # Get current iteration for logging
+        current_iteration = exec_context.inputs.context.get("task_planning_iteration", 0)
+
         output_workflow = {
             "task_list": task_list,
-            "retrieval_queries": structured_result.retrieval_queries
+            "retrieval_queries": structured_result.retrieval_queries,
+            "planning_phase": "task_planning",  # Set phase for router
+            # NOTE: Router will increment task_planning_iteration when routing back for next iteration
+            "task_list_approval": None,  # Clear previous approval status for next iteration
         }
         
         # Create VSCode-ready response for task list display - only include fields VSCode uses
@@ -667,13 +695,21 @@ class CodeGenerationTool(UnstructuredPromptTool):
                 "cell_type": "code"
             }
             output_type = ToolOutputType.EXECUTE_ONLY
+
+            # Create workflow output for LangGraph state (router needs these fields)
+            workflow_output = {
+                "generated_code": extracted_code,
+                "target_cell": positioning_info.get("target_cell_index", 0)
+            }
         else:
             vscode_response = response  # Manual mode: return full response as string
             output_type = ToolOutputType.RESPONSE
+            workflow_output = {}
 
         return ToolResult(
             output_ui=vscode_response,
-            output_type=output_type
+            output_type=output_type,
+            output_workflow=workflow_output
         )
 
 
@@ -692,7 +728,12 @@ class CodeGenerationWithGuidanceTool(UnstructuredPromptTool):
         # If no code was extracted, raise an error to trigger retry in orchestration loop
         if extracted_code is None:
             raise ValueError(f"TaskStepCodeGenerationTool failed to extract code from LLM response. Response length: {len(response)}. This will trigger a retry.")
-        
+
+        # Log code generation action
+        code_preview = extracted_code[:100].replace('\n', ' ') if len(extracted_code) > 100 else extracted_code.replace('\n', ' ')
+        target_cell = positioning_info.get("target_cell", positioning_info.get("target_cell_index", -1))
+        logger.info(f"Generated code for cell {target_cell + 1}: {code_preview}...")
+
         # Create VSCode-ready response - only include fields VSCode uses
         vscode_response = {
             "code": extracted_code,
@@ -701,8 +742,21 @@ class CodeGenerationWithGuidanceTool(UnstructuredPromptTool):
             "cell_type": "code"
         }
 
+        # Create workflow output for LangGraph state (router needs these fields)
+        workflow_output = {
+            "generated_code": extracted_code,
+            "target_cell": positioning_info.get("target_cell_index", 0),
+            # Clear backtracking/retry state to prevent it from persisting to next iteration
+            "cells_to_delete": None,
+            "cells_deleted": None,
+            "backtrack_recovery_done": None,
+            "recovery_objective": None,  # This triggers is_backtracking check in router
+            "retry_objective": None,  # This triggers is_standard_retry check in router
+        }
+
         return ToolResult(
             output_ui=vscode_response,
+            output_workflow=workflow_output,
             output_type=ToolOutputType.EXECUTE_ONLY
         )
 
@@ -716,13 +770,24 @@ class ReasoningResponseWithGuidanceTool(UnstructuredPromptTool):
         """Process code generation response and format for VSCode (always autonomous mode)."""
         positioning_info = exec_context.inputs.context['positioning_info']
 
-        # Check if this is a re-generation (after critique) - if so, replace the previous reasoning cell
-        # 1) replace in critique iteration
-        # 2) replace if this is a retry of a reasoning task (as marked by the markcompletiontool)
+        # Check if this is a re-generation (after critique) - if so, replace
+        # the previous reasoning cell:
+        # 1) replace if critique iteration (reasoning_critique has value)
+        # 2) replace if retry of reasoning task (retry_objective has value)
+        # IMPORTANT: Check value is not None, not just key presence - LangGraph
+        # state has keys with None values, and `"key" in dict` returns True
+        # even when value is None.
+        context = exec_context.inputs.context
         should_replace = (
-            "reasoning_critique" in exec_context.inputs.context or
-            "retry_objective" in exec_context.inputs.context
+            context.get("reasoning_critique") is not None or
+            context.get("retry_objective") is not None
         )
+
+        # Log reasoning generation action
+        response_preview = response[:150].replace('\n', ' ') if len(response) > 150 else response.replace('\n', ' ')
+        target_cell = positioning_info.get("target_cell", positioning_info.get("target_cell_index", -1))
+        action = "Updated" if should_replace else "Generated"
+        logger.info(f"{action} reasoning for cell {target_cell + 1}: {response_preview}...")
 
         # Create VSCode-ready response - only include fields VSCode uses
         vscode_response = {
@@ -732,7 +797,15 @@ class ReasoningResponseWithGuidanceTool(UnstructuredPromptTool):
             "cell_type": "markdown"
         }
         # Make reasoning available for potential critiques:
-        output_workflow = {"reasoning_response": response}
+        output_workflow = {
+            "reasoning_response": response,
+            # Clear backtracking/retry state to prevent it from persisting to next iteration
+            "cells_to_delete": None,
+            "cells_deleted": None,
+            "backtrack_recovery_done": None,
+            "recovery_objective": None,  # This triggers is_backtracking check in router
+            "retry_objective": None,  # This triggers is_standard_retry check in router
+        }
 
         return ToolResult(
             output_type=ToolOutputType.EXECUTE_ONLY,
@@ -808,14 +881,28 @@ class CodeUpdateTool(UnstructuredPromptTool):
                 "cell_type": "code"
             }
             output_type = ToolOutputType.EXECUTE_ONLY
+
+            # Create workflow output for LangGraph state (router needs these fields)
+            workflow_output = {
+                "generated_code": extracted_code,
+                "target_cell": positioning_info.get("target_cell_index", 0),
+                # Clear backtracking/retry state to prevent it from persisting to next iteration
+                "cells_to_delete": None,
+                "cells_deleted": None,
+                "backtrack_recovery_done": None,
+                "recovery_objective": None,  # This triggers is_backtracking check in router
+                "retry_objective": None,  # This triggers is_standard_retry check in router
+                "error_recovery_strategy": None,  # Clear the recovery strategy
+            }
         else:
             vscode_response = response  # Manual mode: return full response as string
             output_type = ToolOutputType.RESPONSE
+            workflow_output = {}
 
         return ToolResult(
             output_ui=vscode_response,
             output_type=output_type,
-            output_workflow={}
+            output_workflow=workflow_output
         )
 
 
@@ -898,7 +985,11 @@ class BacktrackRecoveryTool(StructuredPromptTool):
         """Process structured backtrack recovery result."""
         return ToolResult(
             output_ui=result.restart_required,
-            output_type=ToolOutputType.NO_OUTPUT
+            output_type=ToolOutputType.NO_OUTPUT,
+            output_workflow={
+                "restart_required": result.restart_required,
+                "backtrack_recovery_done": True,  # For deterministic router phase tracking
+            }
         )
 
 
@@ -981,7 +1072,12 @@ class AutonomousMarkCompletionTool(StructuredPromptTool):
 
         # Always provide task_list in output_workflow for state propagation
         output_workflow = {
-            "task_list": updated_task_list
+            "task_list": updated_task_list,
+            "task_completion_analyzed": True,  # For deterministic router phase tracking
+            "generated_code": None,  # Clear for next iteration
+            "reasoning_response": None,  # Clear for next iteration
+            "reasoning_approval": None,  # Clear reasoning critique state for next task
+            "critique_iteration": 0  # Reset critique iteration counter
         }
 
         # Handle backtracking if detected - add backtracking context
@@ -1057,17 +1153,26 @@ class AutonomousUpdateTasksTool(StructuredPromptTool):
             # Get the original task list structure
             # Use the structured result directly (includes analysis_type and tasks)
             updated_tasks = [task.model_dump() for task in structured_result.tasks]
-            # Extract completed tasks from original structure
+
+            # Build map of updated tasks by ID
+            updated_task_map = {task["id"]: task for task in updated_tasks}
+
+            # Preserve ALL original tasks, applying updates where provided
+            # This ensures we don't lose pending tasks when LLM returns partial list
             new_tasks = []
-            completed_task_ids = set()
             for task in original_tasks:
-                if task["status"] != "completed":
-                    break
-                new_tasks.append(task)
-                completed_task_ids.add(task["id"])
-            # Add updated tasks, skipping any that are already in completed section
+                task_id = task["id"]
+                if task_id in updated_task_map:
+                    # Use updated version
+                    new_tasks.append(updated_task_map[task_id])
+                else:
+                    # Preserve original task (not modified by LLM)
+                    new_tasks.append(task)
+
+            # Add any NEW tasks from LLM that weren't in original list
+            original_task_ids = {task["id"] for task in original_tasks}
             for task in updated_tasks:
-                if task["id"] not in completed_task_ids:
+                if task["id"] not in original_task_ids:
                     new_tasks.append(task)
         else:
             assert structured_result.update_rule == "KEEP"
@@ -1076,12 +1181,19 @@ class AutonomousUpdateTasksTool(StructuredPromptTool):
         updated_task_list = {"tasks": new_tasks}
 
         # Validate task list format
-        validate_task_list_format(updated_task_list["tasks"], "AutonomousTaskUpdateTool") 
+        validate_task_list_format(updated_task_list["tasks"], "AutonomousTaskUpdateTool")
+
         updated_task_json = json.dumps(updated_task_list)
         output_workflow = {
             "task_list": updated_task_list,
             "task_list_update_rule": structured_result.update_rule,
             "task_list_update_rationale": structured_result.update_rationale,
+            "tasks_updated": True,  # For deterministic router phase tracking
+            # CRITICAL: Clear critique state to prevent infinite loop when regenerating
+            # after critique failure. Without this, the router sees old approval="MODIFY"
+            # and keeps routing back to autonomous_update_tasks indefinitely.
+            "autonomous_update_approval": None,
+            "autonomous_update_critique": None,
         }
             
         # Extract optional rag queries
@@ -1089,6 +1201,7 @@ class AutonomousUpdateTasksTool(StructuredPromptTool):
         has_error = exec_context.inputs.context['last_execution_failed']
         if (rag_enabled and not has_error) and structured_result.retrieval_queries:
             output_workflow["snippet_retrieval_query"] = structured_result.retrieval_queries
+            logger.info(f"[RAG] Task list update requested {len(structured_result.retrieval_queries)} retrieval queries for next iteration")
         
         # Create display response with updated task list - only include fields VSCode uses
         # Use update_rationale string for display
@@ -1552,6 +1665,9 @@ class ReferenceWorkflowSelectionTool(StructuredPromptTool):
                 # Already internal format
                 internal_ids.append(notebook_id)
 
+        # Log selected workflows for debugging (internal IDs only, full paths logged below)
+        logger.debug(f"📓 Selected {len(structured_result.selected_notebooks)} reference workflows (internal IDs): {internal_ids}")
+
         # Convert structured result to expected format
         selection_data = {"selected_notebooks": internal_ids}
 
@@ -1571,6 +1687,9 @@ class ReferenceWorkflowSelectionTool(StructuredPromptTool):
             full_id = f"{metadata.get('source_repository', 'unknown')}/{metadata.get('workflow_filename', notebook_id)}"
             full_ids.append(full_id)
         selected_notebook_ids = ", ".join(full_ids)
+
+        # Don't log here - cell selection tool will log the final results with percentages
+        logger.debug(f"📚 Reference workflows (full paths): {full_ids}")
 
         vscode_response = {"text": selected_notebook_ids}
         if structured_result.retrieval_queries and len(structured_result.retrieval_queries) > 0:
@@ -1896,6 +2015,22 @@ class ReferenceWorkflowCellSelectionTool(StructuredPromptTool):
         results.sort(key=lambda x: x[0])
         bullet_list = "\n".join([f"📚 {full_id} (considering {percentage:.0f}% of file)" for full_id, percentage in results])
 
+        # Log cell selection results for production visibility
+        num_new = len(new_content_dict)
+        num_kept = len(kept_ids)
+        if num_new > 0 and num_kept > 0:
+            logger.info(f"  Cell selection: {num_new} new + {num_kept} existing = {len(results)} total workflows:")
+        elif num_new > 0:
+            logger.info(f"  Cell selection results for {len(results)} workflows:")
+        else:
+            logger.info(f"  Kept {len(results)} existing workflows:")
+
+        for full_id, percentage in results:
+            logger.info(f"     {full_id}: {percentage:.0f}% of cells selected")
+        # Don't log excluded workflows - it's normal to exclude workflows with 0 cells
+        if excluded_workflows:
+            logger.debug(f"Excluded {len(excluded_workflows)} workflows with 0 cells selected: {excluded_workflows}")
+
         return ToolResult(
             output_ui={"text": bullet_list},
             output_workflow={
@@ -1994,11 +2129,16 @@ class AutonomousUpdateCritiqueTool(StructuredPromptTool):
             vscode_response = {"critique": critique}
         self._log_task_list_updates(vscode_response, exec_context)
 
+        # Increment critique iteration counter for router tracking
+        current_iteration = exec_context.inputs.context.get("critique_iteration", 0)
+
         result = ToolResult(
             output_ui=vscode_response,
             output_workflow={
                 "autonomous_update_approval": approval,
                 "autonomous_update_critique": critique,
+                "critique_iteration": current_iteration + 1,  # Increment for next iteration
+                "update_approved": (approval == "APPROVED"),  # Set flag if approved
             },
             output_type=ToolOutputType.TASK_LIST_DISPLAY if critique else ToolOutputType.NO_OUTPUT,
         )
@@ -2020,18 +2160,35 @@ class ReasoningCritiqueTool(StructuredPromptTool):
             # If MODIFY but no critique, force a retry with better instruction
             raise ValueError("MODIFY approval requires a critique explaining what needs to be changed")
 
+        # Log critique result (without verbose critique text)
+        if approval == "APPROVED":
+            logger.info(f"✅ Reasoning critique: APPROVED")
+        else:
+            logger.info(f"❌ Reasoning critique: REJECTED")
+
         # Send critique to VSCode for display if we have one
         vscode_response = {}
         if critique:
             vscode_response = {"critique": critique}
         self._log_task_list_updates(vscode_response, exec_context)
 
+        # Increment critique iteration counter for router tracking
+        current_iteration = exec_context.inputs.context.get("critique_iteration", 0)
+
+        # If reasoning is rejected, clear reasoning_response to trigger regeneration
+        output_workflow = {
+            "reasoning_approval": approval,
+            "reasoning_critique": critique,
+            "critique_iteration": current_iteration + 1,  # Increment for next iteration
+        }
+
+        if approval != "APPROVED":
+            # Clear reasoning_response so router regenerates it with critique feedback
+            output_workflow["reasoning_response"] = None
+
         result = ToolResult(
             output_ui=vscode_response,
-            output_workflow={
-                "reasoning_approval": approval,
-                "reasoning_critique": critique,
-            },
+            output_workflow=output_workflow,
             output_type=ToolOutputType.TASK_LIST_DISPLAY if critique else ToolOutputType.NO_OUTPUT,
         )
 
@@ -2062,18 +2219,37 @@ class TaskListCritiqueTool(StructuredPromptTool):
             # If MODIFY but no critique, force a retry with better instruction
             raise ValueError("MODIFY approval requires a critique explaining what needs to be changed")
 
+        # Log critique result
+        if approval == "APPROVED":
+            logger.info(f"✅ Task list critique: APPROVED")
+        else:
+            # Show the critique reason
+            critique_msg = critique if critique else "No specific feedback provided"
+            logger.info(f"❌ Task list critique: REJECTED - {critique_msg}")
+
         # Send critique to VSCode for display if we have one
         vscode_response = {}
         if critique:
             vscode_response = {"critique": critique}
         self._log_task_list_updates(vscode_response, exec_context)
 
+        # Prepare output workflow
+        output_workflow = {
+            "task_list_approval": approval,
+            "task_list_critique": critique,
+            "planning_phase": "task_list_critique",  # Signal to router that critique was run
+        }
+
+        # Set task_text_old for next iteration if critique rejected (matches kai_dev line 317-320)
+        # This helps guide the next generation with the previous version
+        if approval != "APPROVED":
+            from kai.core.tools.task_management import format_task_list
+            task_list_old = format_task_list(exec_context.inputs.task_list)
+            output_workflow["task_text_old"] = task_list_old
+
         result = ToolResult(
             output_ui=vscode_response,
-            output_workflow={
-                "task_list_approval": approval,
-                "task_list_critique": critique,
-            },
+            output_workflow=output_workflow,
             output_type=ToolOutputType.TASK_LIST_DISPLAY if critique else ToolOutputType.NO_OUTPUT,
         )
 

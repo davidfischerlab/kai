@@ -284,9 +284,9 @@ export class ChatCore {
      */
     public async getContextForMessage(message: string): Promise<any> {
         const context: any = {};
-        
-        // Get current notebook editor
-        const editor = vscode.window.activeNotebookEditor;
+
+        // Get notebook editor - use tracked notebook to handle cases where another tab is focused
+        const editor = this.notebookOps?.getNotebookEditor() || vscode.window.activeNotebookEditor;
         if (editor) {
             const selection = editor.selections[0];
             if (selection) {
@@ -294,7 +294,7 @@ export class ChatCore {
                 context.currentCell = cell.document.getText();
                 context.currentCellIndex = cell.index;
             }
-            
+
             context.notebookPath = editor.notebook.uri.fsPath;
             context.notebookUri = editor.notebook.uri.toString();
             context.totalCells = editor.notebook.cellCount;

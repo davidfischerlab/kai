@@ -1,4 +1,4 @@
-"""VSCode Communication Architecture - Dedicated class for all VSCode interactions."""
+"""UI Communication Architecture - Dedicated class for UI interactions (VSCode/Jupyter)."""
 
 from dataclasses import dataclass
 import json
@@ -9,24 +9,24 @@ from .base_tool import ToolResult
 from .execution_context import ExecutionInputs
 
 
-@dataclass 
+@dataclass
 class VscodeInputContext:
-    """Minimal context needed for VSCode communication."""
+    """Minimal context needed for UI communication."""
     session_id: str
     inputs: 'ExecutionInputs'
 
-    @property 
+    @property
     def autonomous_mode(self) -> bool:
         return self.inputs.context["autonomous_mode"]
-    
-    @property 
+
+    @property
     def request_id(self) -> str:
         return self.inputs.context["request_id"]
 
 
-class VSCodeCommunicator:
+class UICommunicator:
     """
-    Handles real-time communication with VSCode through stdout JSON messages.
+    Handles real-time communication with UI through stdout JSON messages.
 
     Dual Communication Architecture:
 
@@ -34,7 +34,7 @@ class VSCodeCommunicator:
        - VSCode sends request → Python processes → Returns {"status": "processed"}
        - Promise fulfillment confirms "request was processed"
 
-    2. **Real-time Messages** (handled by VSCodeCommunicator):
+    2. **Real-time Messages** (handled by UICommunicator):
        - Tool results, progress updates, workflow completion signals
        - Streams continuously during Python processing
        - Contains actual workflow data and user-facing content
@@ -47,30 +47,45 @@ class VSCodeCommunicator:
 
     Message Flow: Python stdout → KaiAgentProvider.handleResponse → Chat UI
     """
-    
+
+    # Class-level flag to indicate VSCode mode (set by python-subprocess.py)
+    _vscode_mode = False
+
+    @classmethod
+    def set_vscode_mode(cls, enabled: bool):
+        """Set whether we're running in VSCode mode (JSON stdout) or Jupyter mode (logger)."""
+        cls._vscode_mode = enabled
+
     def __init__(self):
         """Initialize VSCode communicator."""
         self._disabled = False
-    
+
     def disable_communication(self):
         """Disable all VSCode communication (used when stopping autonomous execution)."""
         self._disabled = True
-    
+
     def enable_communication(self):
         """Re-enable VSCode communication."""
         self._disabled = False
-    
+
     def send_console_message(self, message: str):
-        """Send message to VSCode console through stdout."""
+        """Send message to console - VSCode JSON or Jupyter logger depending on mode."""
         if self._disabled:
             return  # Skip sending if communication is disabled
-        
-        msg = {
-            "type": "console_log",
-            "message": message
-        }
-        print(json.dumps(msg))
-        sys.stdout.flush()
+
+        if UICommunicator._vscode_mode:
+            # VSCode mode: send JSON to stdout
+            msg = {
+                "type": "console_log",
+                "message": message
+            }
+            print(json.dumps(msg))
+            sys.stdout.flush()
+        else:
+            # Jupyter mode: use logger (goes to stderr, formatted nicely)
+            import logging
+            logger = logging.getLogger("kai.orchestration")
+            logger.info(message)
     
     async def send_tool_result(self, result: ToolResult, context: VscodeInputContext):
         """

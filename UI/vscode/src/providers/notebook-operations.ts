@@ -395,6 +395,11 @@ export class NotebookOperations extends NotebookHistoryTracker {
     private _lastTerminatedCellIndex: number = -1; // Index of last cell terminated by monitor
     private _terminationReason: string = ""; // Reason for termination
 
+    /**
+     * Tracked notebook - persists notebook reference when user clicks away
+     */
+    private _trackedNotebook: vscode.NotebookDocument | undefined;
+
     constructor(
         private revealCellCallback: (cellIndex: number) => void,
         private agentProvider: any
@@ -407,6 +412,39 @@ export class NotebookOperations extends NotebookHistoryTracker {
     get executingCells() { return this._executingCells; }
     get lastTerminatedCellIndex() { return this._lastTerminatedCellIndex; }
     get terminationReason() { return this._terminationReason; }
+
+    /**
+     * Set tracked notebook for autonomous mode (call when autonomous mode starts)
+     */
+    public setTrackedNotebook(notebook: vscode.NotebookDocument | undefined): void {
+        this._trackedNotebook = notebook;
+        if (notebook) {
+            console.log(`[KAI] setTrackedNotebook: Tracking notebook with ${notebook.cellCount} cells`);
+        } else {
+            console.log('[KAI] setTrackedNotebook: Cleared tracked notebook');
+        }
+    }
+
+    /**
+     * Get notebook editor - prefers active editor, falls back to tracked notebook.
+     * Use this instead of vscode.window.activeNotebookEditor to handle cases where
+     * another tab (e.g., a code file) is focused but the notebook is still visible.
+     */
+    public getNotebookEditor(): vscode.NotebookEditor | undefined {
+        const activeEditor = vscode.window.activeNotebookEditor;
+        if (activeEditor) {
+            return activeEditor;
+        }
+        // Fall back to tracked notebook
+        if (this._trackedNotebook) {
+            for (const editor of vscode.window.visibleNotebookEditors) {
+                if (editor.notebook.uri.toString() === this._trackedNotebook.uri.toString()) {
+                    return editor;
+                }
+            }
+        }
+        return undefined;
+    }
 
     /**
      * Clear termination tracking state.
@@ -425,7 +463,7 @@ export class NotebookOperations extends NotebookHistoryTracker {
      * @interaction Called by ChatCore._getNotebookStructure
      */
     public getNotebookStructure(): any {
-        const editor = vscode.window.activeNotebookEditor;
+        const editor = this.getNotebookEditor();
         if (!editor) {
             return {
                 totalCells: 0,
@@ -500,7 +538,7 @@ export class NotebookOperations extends NotebookHistoryTracker {
          * Updates the execution queue tracking by scanning all cells for their execution states.
          * This method identifies which cells are queued, currently executing, or completed.
          */
-        const editor = vscode.window.activeNotebookEditor;
+        const editor = this.getNotebookEditor();
         if (!editor) return;
 
         const newQueuedCells = new Set<number>();
@@ -557,7 +595,7 @@ export class NotebookOperations extends NotebookHistoryTracker {
      * @param afterCellNumber Cell to insert after (0-based, use -1 for beginning)
      */
     public async replaceMarkdown(content: string, cellNumber: number): Promise<vscode.NotebookCell> {
-        const editor = vscode.window.activeNotebookEditor;
+        const editor = this.getNotebookEditor();
         if (!editor) {
             throw new Error('No active notebook');
         }
@@ -609,7 +647,7 @@ export class NotebookOperations extends NotebookHistoryTracker {
     }
 
     public async addMarkdown(content: string, afterCellNumber: number): Promise<vscode.NotebookCell> {
-        const editor = vscode.window.activeNotebookEditor;
+        const editor = this.getNotebookEditor();
         if (!editor) {
             throw new Error('No active notebook');
         }
@@ -661,7 +699,7 @@ export class NotebookOperations extends NotebookHistoryTracker {
      * @param execute Whether to execute the new cell
      */
     public async addCode(code: string, afterCellNumber: number, execute: boolean = false): Promise<vscode.NotebookCell> {
-        const editor = vscode.window.activeNotebookEditor;
+        const editor = this.getNotebookEditor();
         if (!editor) {
             throw new Error('No active notebook');
         }
@@ -705,7 +743,7 @@ export class NotebookOperations extends NotebookHistoryTracker {
      * @param execute Whether to execute after replacement
      */
     public async replaceCode(code: string, cellNumber: number, execute: boolean = false): Promise<vscode.NotebookCell> {
-        const editor = vscode.window.activeNotebookEditor;
+        const editor = this.getNotebookEditor();
         if (!editor) {
             throw new Error('No active notebook');
         }
@@ -765,7 +803,7 @@ export class NotebookOperations extends NotebookHistoryTracker {
         let cell: vscode.NotebookCell;
         
         // Sanity checks
-        const editor = vscode.window.activeNotebookEditor;
+        const editor = this.getNotebookEditor();
         if (!editor) {
             throw new Error;
         }
@@ -852,7 +890,7 @@ export class NotebookOperations extends NotebookHistoryTracker {
     }
 
     public async deleteCell(targetCellIndex: number): Promise<void> {
-        const editor = vscode.window.activeNotebookEditor;
+        const editor = this.getNotebookEditor();
         if (!editor) {
             return;
         }

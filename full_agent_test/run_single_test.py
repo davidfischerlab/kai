@@ -28,7 +28,7 @@ sys.stdout.flush()
 
 os.environ['TQDM_DISABLE'] = '1'
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
-os.environ['KAI_DEBUG_PROMPTS'] = 'false'
+os.environ['KAI_DEBUG_PROMPTS'] = 'true'  # Enable prompt debugging for full agent tests
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -181,7 +181,8 @@ async def run_single_test(args):
 
             result = await interface.run_autonomous(
                 initial_message=args.task,
-                max_iterations=args.max_iterations
+                max_iterations=args.max_iterations,
+                graph_recursion_limit=args.graph_recursion_limit
             )
 
             # Save modified notebook
@@ -260,7 +261,8 @@ def main():
     parser.add_argument('--llm-model', default=None, help='LLM model name')
     parser.add_argument('--rag-enabled', action='store_true', default=True, help='Enable RAG')
     parser.add_argument('--no-rag', action='store_false', dest='rag_enabled', help='Disable RAG')
-    parser.add_argument('--max-iterations', type=int, default=100, help='Max autonomous iterations')
+    parser.add_argument('--max-iterations', type=int, default=40, help='Max autonomous iterations')
+    parser.add_argument('--graph-recursion-limit', type=int, default=None, help='Max graph steps per iteration (default: None = use orchestrator default of 100)')
 
     args = parser.parse_args()
 

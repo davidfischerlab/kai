@@ -74,8 +74,8 @@ class ManageProgressTool(BaseTool):
 
         return ToolResult(
             output_workflow=exec_context.inputs.context,
-            output_ui=assess_result.output_ui,
-            output_type=assess_result.output_type
+            output_ui=advance_result.output_ui,  # Use advance_result (has activated task)
+            output_type=advance_result.output_type  # TASK_LIST_DISPLAY with updated statuses
         )
 
 

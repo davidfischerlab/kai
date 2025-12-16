@@ -21,9 +21,13 @@ class ExecuteCellTool(BaseTool):
         super().__init__("execute_cell")
 
     async def execute(self, exec_context: "ExecutionContext", **kwargs) -> ToolResult:
+        # Clear generated_code and target_cell after execution to prevent infinite loop
         return ToolResult(
             output_ui={},
-            output_workflow={},
+            output_workflow={
+                "generated_code": None,  # Clear to prevent re-execution
+                "target_cell": None,
+            },
             output_type=ToolOutputType.NO_OUTPUT
         )
 

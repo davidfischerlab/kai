@@ -89,7 +89,6 @@ export class AutonomousExecution {
      * @see ChatViewProvider._handleMessage() for state routing
      */
     setWorkflowState(state: string) {
-        console.log('WORKFLOW STATE UPDATED:', state);
         this._currentWorkflowState = state;
     }
 
@@ -155,6 +154,22 @@ export class AutonomousExecution {
             this._autonomousMode = true;
             this._loopRunning = true;
             this.updateAutoModeButton();
+
+            // Track notebook before user might click away during planning
+            const editor = vscode.window.activeNotebookEditor;
+            if (editor) {
+                this.notebookOps.setTrackedNotebook(editor.notebook);
+            } else {
+                // Try to find any visible notebook editor
+                const visibleEditors = vscode.window.visibleNotebookEditors;
+                console.log(`[KAI] No active notebook editor at start. Visible editors: ${visibleEditors.length}`);
+                if (visibleEditors.length > 0) {
+                    this.notebookOps.setTrackedNotebook(visibleEditors[0].notebook);
+                    console.log(`[KAI] Using first visible notebook editor as fallback`);
+                } else {
+                    console.warn('[KAI] WARNING: No notebook editor found at autonomous mode start!');
+                }
+            }
 
             // Reset task tracking for new session to ensure fresh bubble
             this.chatCore.resetTaskTracking();
@@ -275,7 +290,10 @@ export class AutonomousExecution {
             this._workflowCompletionResolver = null;
             this._workflowCompletionPromise = null;
         }
-        
+
+        // Clear tracked notebook reference
+        this.notebookOps.setTrackedNotebook(undefined);
+
         // Update UI immediately
         this.updateAutoModeButton();
         
@@ -353,7 +371,7 @@ export class AutonomousExecution {
             const recoveryStrategy = codeResponse.error_recovery_strategy;
             const shouldReplace = codeResponse.should_replace_code === "true";
 
-            console.log('Using cell position:', cellNumber, 'with should replace:', shouldReplace, ' and recovery strategy:', recoveryStrategy);
+            console.log('[KAI] Using cell position:', cellNumber, 'with should replace:', shouldReplace, ' and recovery strategy:', recoveryStrategy);
 
             let notebookCell: vscode.NotebookCell;
             const cellType = codeResponse.cell_type || "code";  // Default to code if not specified
@@ -435,10 +453,12 @@ export class AutonomousExecution {
             await new Promise(resolve => setTimeout(resolve, 2000));
             
             // Step 2: Run all cells up to and including the error cell
-            const editor = vscode.window.activeNotebookEditor;
+            // Use tracked notebook editor (not activeNotebookEditor) to handle cases where
+            // another tab is focused but the notebook is still visible
+            const editor = this.notebookOps.getNotebookEditor();
             if (editor) {
                 console.log(`🔄 Running cells 0 through ${errorCellIndex} after kernel restart`);
-                
+
                 // Execute cells from 0 to errorCellIndex (inclusive)
                 for (let i = 0; i <= errorCellIndex && i < editor.notebook.cellCount; i++) {
                     const cell = editor.notebook.cellAt(i);
@@ -449,7 +469,7 @@ export class AutonomousExecution {
                                 ranges: [{ start: i, end: i + 1 }],
                                 document: editor.notebook.uri
                             });
-                            
+
                             // Wait a bit between executions to avoid overwhelming
                             await new Promise(resolve => setTimeout(resolve, 500));
                         } catch (error: any) {
@@ -459,7 +479,7 @@ export class AutonomousExecution {
                     }
                 }
             } else {
-                console.error('No active notebook editor for restart and run strategy');
+                console.error('No notebook editor found for restart and run strategy');
                 this.chatCore.addMessage('assistant', '❌ Failed to find notebook for restart and run', false, false);
             }
             
@@ -477,7 +497,9 @@ export class AutonomousExecution {
             return;
         }
 
-        const editor = vscode.window.activeNotebookEditor;
+        // Use tracked notebook editor (not activeNotebookEditor) to handle cases where
+        // another tab is focused but the notebook is still visible
+        const editor = this.notebookOps.getNotebookEditor();
         if (!editor) {
             return;
         }

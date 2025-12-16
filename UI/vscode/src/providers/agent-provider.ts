@@ -241,7 +241,7 @@ export class KaiAgentProvider {
                         
                         // Track when agent is fully ready (LLM loaded)
                         if (response.message === 'Agent ready!') {
-                            console.log('Agent ready!');
+                            console.log('[KAI] Agent ready!');
                             this.isFullyReady = true;
                         }
                         continue; // Status messages don't need further processing
@@ -251,6 +251,7 @@ export class KaiAgentProvider {
                         continue; // Initialization messages don't need further processing
                     } else if (response.type === 'console_log') {
                         // Handle timing and debug console messages
+                        // Python messages already include [KAI] prefix for filtering
                         console.log(response.message);
                         continue;
                     } else if (response.type === 'response') {
@@ -449,7 +450,7 @@ export class KaiAgentProvider {
     async handleAutonomousIteration(message: string, context: any): Promise<{ status: string }> {
         // Unified autonomous handler: Handles both initial planning and user feedback
         // Python side uses intent classification to route to appropriate workflow
-        const autonomousContext = { ...context, autonomousMode: true };
+        const autonomousContext = { ...context, autonomousMode: true, confirmPlan: true };
         return this.sendRequest('chat', { message, context: autonomousContext }, 1800000); // 30 minutes
     }
 

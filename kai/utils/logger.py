@@ -88,8 +88,9 @@ def setup_logger(
         console_handler = logging.StreamHandler(sys.stderr)
         console_handler.setLevel(logging.DEBUG)
 
-        # Use colored formatter for console
-        console_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        # Use simplified format for console (timestamp + message only)
+        # Full format (with module name and level) goes to file handler
+        console_format = "%(asctime)s - %(message)s"
         console_formatter = ColoredFormatter(console_format, datefmt="%H:%M:%S")
         console_handler.setFormatter(console_formatter)
 
