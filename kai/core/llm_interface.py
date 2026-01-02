@@ -8,19 +8,60 @@ from pathlib import Path
 from datetime import datetime
 
 import ollama
+from pydantic import ValidationError as PydanticValidationError
 try:
     import openai
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
 
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
+
 from kai.core.llm_config import LLMConfig
 from kai.config.settings import Settings
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# CUSTOM EXCEPTIONS FOR RETRY LOGIC
+# =============================================================================
+
+class RetriableError(Exception):
+    """Network/timeout errors that should be retried with exponential backoff.
+
+    These are transient errors that may succeed on retry:
+    - Network timeouts
+    - Connection errors
+    - Rate limiting
+    - Service unavailable
+    """
+    pass
+
+
+class NonRetriableError(Exception):
+    """Validation/parsing errors that need different handling.
+
+    These errors indicate the LLM response was invalid and require
+    context reduction or prompt modification rather than simple retry:
+    - JSON parsing errors
+    - Schema validation errors
+    - Empty responses
+    """
+    def __init__(self, message: str, raw_output: str = None):
+        super().__init__(message)
+        self.raw_output = raw_output
 
 # Use TYPE_CHECKING to avoid circular import
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from kai.core.orchestration.prompt_tools import BasePromptTool
+    from kai.core.tools.prompt_base import BasePromptTool
 
 
 class BaseLLMProvider(ABC):
@@ -187,7 +228,7 @@ class BaseLLMProvider(ABC):
                 try:
                     structured_data = json.loads(json_text)
                     return schema.model_validate(structured_data)
-                except (json.JSONDecodeError, ValueError) as e:
+                except (json.JSONDecodeError, ValueError, PydanticValidationError) as e:
                     # Log faulty response for debugging
                     self._log_faulty_response(response, e, tool_name)
                     # Attach raw output to exception for debugging
@@ -206,10 +247,12 @@ class BaseLLMProvider(ABC):
 class OllamaProvider(BaseLLMProvider):
     """Ollama LLM provider."""
     provider_name = "ollama"
-    
-    def __init__(self, model: str, settings: Settings, use_structured_output: bool = False):
+
+    def __init__(
+        self, model: str, settings: Settings, use_structured_output: bool = False
+    ):
         """Initialize Ollama provider.
-        
+
         Args:
             model: Model name
             settings: Application settings
@@ -218,10 +261,10 @@ class OllamaProvider(BaseLLMProvider):
         self.model = model
         self.settings = settings
         self.client = ollama.AsyncClient()
-        
+
         # Get model config
         self.model_config = LLMConfig.get_model_config(model)
-        
+
         # Check if model is available
         self._ensure_model_available()
     
@@ -239,19 +282,92 @@ class OllamaProvider(BaseLLMProvider):
         model_names = []
         for m in model_list:
             if hasattr(m, 'model'):
-                # New Model object format
+                # Model object format
                 model_names.append(m.model)
             elif isinstance(m, dict) and 'name' in m:
-                # Old dict format
+                # Dict format with 'name' key
                 model_names.append(m['name'])
             elif isinstance(m, dict) and 'model' in m:
-                # Alternative dict format
+                # Dict format with 'model' key
                 model_names.append(m['model'])
             else:
                 raise ValueError(f"Unknown model format: {type(m)}, content: {m}")
         
         if self.model not in model_names:
             ollama.pull(self.model)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        retry=retry_if_exception_type(RetriableError),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True
+    )
+    async def _call_llm_with_retry(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        context_size: int,
+        **kwargs
+    ) -> str:
+        """Internal method to call LLM with tenacity retry for transient errors.
+
+        This method is wrapped with tenacity's @retry decorator to handle
+        network timeouts and connection errors with exponential backoff.
+
+        Args:
+            messages: Chat messages
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            context_size: Context window size
+            **kwargs: Additional options
+
+        Returns:
+            Generated response content
+
+        Raises:
+            RetriableError: For network/timeout errors (will be retried)
+            NonRetriableError: For validation/parsing errors (not retried)
+        """
+        timeout_seconds = 300.0
+
+        try:
+            response = await asyncio.wait_for(
+                self.client.chat(
+                    model=self.model,
+                    messages=messages,
+                    think=False,
+                    options={
+                        "temperature": temperature,
+                        "num_predict": max_tokens,
+                        "num_ctx": context_size,
+                        **kwargs,
+                    },
+                ),
+                timeout=timeout_seconds
+            )
+            content = response["message"]["content"]
+            if not content or not content.strip():
+                raise NonRetriableError(
+                    f"Empty response from model {self.model}",
+                    raw_output=""
+                )
+            return content
+
+        except asyncio.TimeoutError:
+            raise RetriableError(
+                f"LLM request timed out after {timeout_seconds}s"
+            )
+        except ConnectionError as e:
+            raise RetriableError(f"Connection error: {e}")
+        except ollama.ResponseError as e:
+            # Check if it's a rate limit or server error (retriable)
+            error_str = str(e).lower()
+            if "rate" in error_str or "503" in error_str or "502" in error_str:
+                raise RetriableError(f"Server error (retriable): {e}")
+            # Otherwise it's likely a model/config error (not retriable)
+            raise NonRetriableError(f"Ollama error: {e}")
 
     async def _generate(
         self,
@@ -263,53 +379,52 @@ class OllamaProvider(BaseLLMProvider):
         **kwargs
     ) -> str:
         """Generate a response using Ollama.
-        
+
         Args:
             prompt: User prompt
             system_prompt: System prompt
             temperature: Temperature for sampling
             max_tokens: Maximum tokens to generate
             **kwargs: Additional parameters
-            
+
         Returns:
             Generated response
         """
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        # Calculate appropriate context size based on input
+        context_size = self.calculate_tiered_context_size(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            context_length_factor=context_length_factor
+        )
+
+        temp = temperature or (
+            self.model_config.default_temperature if self.model_config else 0.7
+        )
+        tokens = max_tokens or self.settings.MAX_TOKENS
+
         try:
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
-            
-            # Calculate appropriate context size based on input
-            context_size = self.calculate_tiered_context_size(
-                prompt=prompt, system_prompt=system_prompt, context_length_factor=context_length_factor)
-
-            # Add timeout to prevent hanging - longer timeout for larger models
-            import asyncio
-            timeout_seconds = 300.0
-
-            response = await asyncio.wait_for(
-                self.client.chat(
-                    model=self.model,
-                    messages=messages,
-                    think=False,  # Dont show thinking process to not interfere with structured output.
-                    options={
-                        "temperature": temperature or (self.model_config.default_temperature if self.model_config else 0.7),
-                        "num_predict": max_tokens or self.settings.MAX_TOKENS,
-                        "num_ctx": context_size,
-                        **kwargs,
-                    },
-                ),
-                timeout=timeout_seconds
+            return await self._call_llm_with_retry(
+                messages=messages,
+                temperature=temp,
+                max_tokens=tokens,
+                context_size=context_size,
+                **kwargs
             )
-            
-            return response["message"]["content"]
-            
-        except asyncio.TimeoutError:
-            timeout_used = 300.0
-            raise Exception(f"LLM request timed out after {timeout_used}s. Please check if Ollama is running and the model '{self.model}' is available.")
-        except Exception as e:
-            raise Exception(f"Error generating with Ollama: {e}")
+        except RetriableError as e:
+            # All retries exhausted
+            raise Exception(
+                f"LLM request failed after retries. "
+                f"Please check if Ollama is running and '{self.model}' is available. "
+                f"Error: {e}"
+            )
+        except NonRetriableError:
+            # Let NonRetriableError propagate to base.py for context-reduction retry
+            raise
     
     async def _generate_structured(self, prompt: str, schema, system_prompt: Optional[str] = None, 
                                    tool_name: str = "unknown", context_length_factor: float = 1., **kwargs):
@@ -347,7 +462,7 @@ class OllamaProvider(BaseLLMProvider):
         try:
             structured_data = json.loads(content)
             return schema.model_validate(structured_data)
-        except (json.JSONDecodeError, ValueError) as e:
+        except (json.JSONDecodeError, ValueError, PydanticValidationError) as e:
             # Log faulty response for debugging
             self._log_faulty_response(content, e, tool_name)
             # Attach raw output to exception for debugging
@@ -468,10 +583,16 @@ class OpenAIProvider(BaseLLMProvider):
 class OllamaTurboProvider(BaseLLMProvider):
     """Ollama Turbo provider for remote model execution."""
     provider_name = "ollama-turbo"
-    
-    def __init__(self, model: str, settings: Settings, api_key: Optional[str] = None, use_structured_output: bool = False):
+
+    def __init__(
+        self,
+        model: str,
+        settings: Settings,
+        api_key: Optional[str] = None,
+        use_structured_output: bool = False
+    ):
         """Initialize Ollama Turbo provider.
-        
+
         Args:
             model: Model name (e.g., "gpt-oss:120b")
             settings: Application settings
@@ -480,7 +601,7 @@ class OllamaTurboProvider(BaseLLMProvider):
         super().__init__(use_structured_output=use_structured_output)
         self.model = model
         self.settings = settings
-        
+
         # Initialize Turbo client - don't store the API key
         headers = {}
         if api_key is not None:
@@ -493,7 +614,62 @@ class OllamaTurboProvider(BaseLLMProvider):
 
         # Get model config (use local model config as fallback)
         self.model_config = LLMConfig.get_model_config(model)
-    
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=4, max=60),
+        retry=retry_if_exception_type(RetriableError),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True
+    )
+    async def _call_llm_with_retry(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        context_size: int,
+        **kwargs
+    ) -> str:
+        """Internal method to call Turbo LLM with tenacity retry.
+
+        Turbo has longer timeouts (10 min) for large remote models.
+        """
+        timeout_seconds = 600.0  # 10 minutes for Turbo
+
+        try:
+            response = await asyncio.wait_for(
+                self.client.chat(
+                    model=self.model,
+                    messages=messages,
+                    options={
+                        "temperature": temperature,
+                        "num_predict": max_tokens,
+                        "num_ctx": context_size,
+                        **kwargs,
+                    },
+                ),
+                timeout=timeout_seconds
+            )
+            content = response["message"]["content"]
+            if not content or not content.strip():
+                raise NonRetriableError(
+                    f"Empty response from Turbo model {self.model}",
+                    raw_output=""
+                )
+            return content
+
+        except asyncio.TimeoutError:
+            raise RetriableError(
+                f"Turbo request timed out after {timeout_seconds}s"
+            )
+        except ConnectionError as e:
+            raise RetriableError(f"Connection error: {e}")
+        except ollama.ResponseError as e:
+            error_str = str(e).lower()
+            if "rate" in error_str or "503" in error_str or "502" in error_str:
+                raise RetriableError(f"Server error (retriable): {e}")
+            raise NonRetriableError(f"Ollama Turbo error: {e}")
+
     async def _generate(
         self,
         prompt: str,
@@ -505,7 +681,7 @@ class OllamaTurboProvider(BaseLLMProvider):
         **kwargs
     ) -> str:
         """Generate a response using Ollama Turbo.
-        
+
         Args:
             prompt: User prompt
             system_prompt: System prompt
@@ -513,45 +689,42 @@ class OllamaTurboProvider(BaseLLMProvider):
             max_tokens: Maximum tokens to generate
             reasoning_level: Reasoning level for OSS models
             **kwargs: Additional parameters
-            
+
         Returns:
             Generated response
         """
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        context_size = self.calculate_tiered_context_size(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            context_length_factor=context_length_factor
+        )
+
+        temp = temperature or (
+            self.model_config.default_temperature if self.model_config else 0.
+        )
+        tokens = max_tokens or self.settings.MAX_TOKENS
+
         try:
-            messages = []
-            # Set system prompt if available:
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            # Set user prompt:
-            messages.append({"role": "user", "content": prompt})
-            
-            # Calculate appropriate context size based on input
-            context_size = self.calculate_tiered_context_size(
-                prompt=prompt, system_prompt=system_prompt, context_length_factor=context_length_factor)
-
-            # Use longer timeout for Turbo models (they can be large)
-            timeout_seconds = 600.0  # 10 minutes for Turbo
-
-            response = await asyncio.wait_for(
-                self.client.chat(
-                    model=self.model,
-                    messages=messages,
-                    options={
-                        "temperature": temperature or (self.model_config.default_temperature if self.model_config else 0.),
-                        "num_predict": max_tokens or self.settings.MAX_TOKENS,
-                        "num_ctx": context_size,
-                        **kwargs,
-                    },
-                ),
-                timeout=timeout_seconds
+            return await self._call_llm_with_retry(
+                messages=messages,
+                temperature=temp,
+                max_tokens=tokens,
+                context_size=context_size,
+                **kwargs
             )
-            
-            return response["message"]["content"]
-            
-        except asyncio.TimeoutError:
-            raise Exception(f"Ollama Turbo request timed out after {timeout_seconds}s for model '{self.model}'.")
-        except Exception as e:
-            raise Exception(f"Error generating with Ollama Turbo: {e}")
+        except RetriableError as e:
+            raise Exception(
+                f"Ollama Turbo request failed after retries for '{self.model}'. "
+                f"Error: {e}"
+            )
+        except NonRetriableError:
+            # Let NonRetriableError propagate to base.py for context-reduction retry
+            raise
 
 
 class LLMInterface:

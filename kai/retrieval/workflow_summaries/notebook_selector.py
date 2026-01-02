@@ -125,7 +125,7 @@ JSON Response:"""
                 if notebook_data:
                     selected_notebooks[notebook_id] = notebook_data
                 else:
-                    logger.warning(f"Could not retrieve content for notebook: {notebook_id}")
+                    logger.debug(f"Could not retrieve content for notebook: {notebook_id}")
 
             except Exception as e:
                 logger.error(f"Error retrieving notebook {notebook_id}: {e}")

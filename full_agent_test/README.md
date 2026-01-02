@@ -30,7 +30,7 @@ Generates:
 
 ## Configuration
 
-Edit `configs/scenario1_config.yaml` to modify:
+Edit `configs/scenario1_cell_type_annotation.yaml` to modify:
 - Test cases and prompts
 - Number of replicates
 - Max iterations
@@ -44,7 +44,7 @@ full_agent_test/
 ├── run_single_test.py        # Single test executor
 ├── analyze_results.py        # LLM-based evaluation
 ├── configs/
-│   └── scenario1_config.yaml # Test configuration
+│   └── scenario1_cell_type_annotation.yaml # Test configuration
 ├── test_outputs/             # Test results (gitignored)
 └── analysis/                 # Analysis outputs (gitignored)
 ```

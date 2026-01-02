@@ -49,6 +49,28 @@ class Settings:
     AUTO_COMMIT: bool = True
     COMMIT_MESSAGE_PREFIX: str = "[kai_agent]"
 
+    # Checkpoint persistence settings
+    # Storage: ~/.kai_agent/checkpoints.db by default
+    # Mode: TRANSIENT (clear on completion) or PERSISTENT (keep indefinitely)
+    # For manual cleanup of old checkpoints, use kai.core.debug.checkpoint_cleanup
+    CHECKPOINT_DB_PATH: Optional[Path] = None  # None = use default path
+    CHECKPOINT_MODE: str = "transient"  # "transient" or "persistent"
+
+    @property
+    def checkpoint_db_path(self) -> Optional[Path]:
+        """Get checkpoint database path if explicitly set."""
+        return self.CHECKPOINT_DB_PATH
+
+    @property
+    def checkpoint_db_path_resolved(self) -> Path:
+        """Get resolved checkpoint database path (for SqliteSaver).
+
+        Returns explicit path if set, otherwise ~/.kai_agent/checkpoints.db
+        """
+        if self.CHECKPOINT_DB_PATH is not None:
+            return self.CHECKPOINT_DB_PATH
+        return self.BASE_DIR / "checkpoints.db"
+
     # Knowledge base settings
     EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
     CHUNK_SIZE: int = 1000
@@ -107,6 +129,8 @@ class Settings:
             "KAI_DEBUG_PROMPTS": ("DEBUG_PROMPTS", lambda x: x.lower() == "true"),
             "KAI_VERBOSE": ("VERBOSE", lambda x: x.lower() == "true"),
             "KAI_DISABLE_TURBO": ("DISABLE_TURBO", lambda x: x.lower() == "true"),
+            "KAI_CHECKPOINT_DB_PATH": ("CHECKPOINT_DB_PATH", Path),
+            "KAI_CHECKPOINT_MODE": ("CHECKPOINT_MODE", str),  # transient/persistent
         }
 
         for env_var, (setting_name, converter) in env_mapping.items():

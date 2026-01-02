@@ -7,7 +7,7 @@ from enum import Enum
 from .utils import format_task_list
 
 if TYPE_CHECKING:
-    from kai.core.orchestration.execution_context import ExecutionContext
+    from kai.core.orchestration.state import KaiState
 
 # Global prompt manager instance
 _prompt_manager_instance = None
@@ -890,7 +890,7 @@ In the output:
         },
 
         PromptScenario.CODE_GENERATION_WITH_GUIDANCE: {
-            "system": "code_generation_with_guidance", 
+            "system": "code_generation_with_guidance",
             "user_template": """{constant_scenario_prompt}
 
 This code generation is guided by a specific task objective from an active task list.
@@ -898,15 +898,12 @@ Adhere to these rules:
 - Focus on implementing the specific task objective provided
 - Generate code that directly addresses the task goal
 - Consider execution context and previous results from the notebook
-- If you are given citations of positions in reference workflows to adapt as part of the guidance, 
+- If you are given citations of positions in reference workflows to adapt as part of the guidance,
   focus the scope of the code generation on these positions in reference notebooks and try to reflect this code as closely as reasonable.
   Try to implement the cited code cells from the references as directly as possible, adhering to the following rules and guidelines.
   Often, the more similar you code is to the code presented in these reference cells, the more transparent your analysis will be.
 
 {active_vs_next}
-
-=== User query:
-{user_query}
 
 {context_sections_heading}
 {context_sections_rag}
@@ -1296,11 +1293,11 @@ The problem/question that was reasoned about is:
         }
     }
     
-    def generate_prompt(self, exec_context: 'ExecutionContext', scenario: PromptScenario, model_name: str = "", structured_output: bool = True, reasoning_level: Optional[str] = None) -> tuple[str, str]:
-        """Generate system and user prompts for the given execution exec_context.
+    def generate_prompt(self, state: 'KaiState', scenario: PromptScenario, model_name: str = "", structured_output: bool = True, reasoning_level: Optional[str] = None) -> tuple[str, str]:
+        """Generate system and user prompts for the given state.
 
         Args:
-            exec_context: ExecutionContext with all necessary data
+            state: KaiState with all necessary data
             scenario: The prompt scenario to use
             model_name: The LLM model name to generate appropriate prompts for
             structured_output: If False, append JSON format instructions to system prompt
@@ -1323,37 +1320,40 @@ The problem/question that was reasoned about is:
         # Build contextual sections (only build RAG section if template uses it)
         sections = {
             "constant_scenario_prompt": constant_scenario_prompt,
-            "execution_history_section": self._build_execution_history_section(exec_context),
-            "execution_monitor_section": self._build_execution_monitor_section(exec_context),
-            "conversation_history_section": self._build_conversation_history_section(exec_context),
-            "notebook_structure_section": self._build_notebook_structure_section(exec_context, scenario),
-            "error_section": self._build_error_section(exec_context),
+            "execution_history_section": self._build_execution_history_section(state),
+            "execution_monitor_section": self._build_execution_monitor_section(state),
+            "conversation_history_section": self._build_conversation_history_section(state),
+            "notebook_structure_section": self._build_notebook_structure_section(state, scenario),
+            "error_section": self._build_error_section(state),
             # Optional sections:
-            "active_vs_next": self._build_active_vs_next_section(exec_context),
-            "cell_selection_deletion_section": self._build_cell_selection_deletion_section(exec_context),
-            "rag_section": self._build_rag_section(exec_context),
-            "reasoning_instructions_section": self._build_reasoning_instructions_section(exec_context),
-            "reasoning_critique_instructions_section": self._build_reasoning_critique_instructions_section(exec_context),
-            "reference_workflow_preselection_section": self._build_reference_workflow_preselection_section(exec_context),
-            "reference_workflow_section": self._build_reference_workflow_section(exec_context),
-            "task_list_section": self._build_task_list_section(exec_context),
-            "task_list_update_instructions": self._build_task_list_update_instructions_section(exec_context),
-            "task_list_update_critique_instructions": self._build_task_list_update_critique_instructions_section(exec_context),
-            "task_list_generation_instructions": self._build_task_list_generation_instructions_section(exec_context),
-            "task_list_generation_critique_instructions": self._build_task_list_generation_critique_instructions_section(exec_context),
-            "retrieval_query_section": self._build_retrieval_query_section(exec_context),
-            "reference_workflow_ids_section": self._build_reference_workflow_ids_section(exec_context),
-            "retry_objective_section": self._build_retry_objective_section(exec_context),
-            "current_notebook_cell_selection_section": self._build_current_notebook_cell_selection_section(exec_context),
+            "active_vs_next": self._build_active_vs_next_section(state),
+            "cell_selection_deletion_section": self._build_cell_selection_deletion_section(state),
+            "rag_section": self._build_rag_section(state),
+            "reasoning_instructions_section": self._build_reasoning_instructions_section(state),
+            "reasoning_critique_instructions_section": self._build_reasoning_critique_instructions_section(state),
+            "reference_workflow_preselection_section": self._build_reference_workflow_preselection_section(state),
+            "reference_workflow_section": self._build_reference_workflow_section(state),
+            "task_list_section": self._build_task_list_section(state),
+            "task_list_update_instructions": self._build_task_list_update_instructions_section(state),
+            "task_list_update_critique_instructions": self._build_task_list_update_critique_instructions_section(state),
+            "task_list_generation_instructions": self._build_task_list_generation_instructions_section(state),
+            "task_list_generation_critique_instructions": self._build_task_list_generation_critique_instructions_section(state),
+            "retrieval_query_section": self._build_retrieval_query_section(state),
+            "reference_workflow_ids_section": self._build_reference_workflow_ids_section(state),
+            "retry_objective_section": self._build_retry_objective_section(state),
+            "current_notebook_cell_selection_section": self._build_current_notebook_cell_selection_section(state),
             # Directly from context
-            "active_task_objective": exec_context.inputs.context.get("active_task_objective", ""),
-            "retry_objective": exec_context.inputs.context.get("retry_objective", ""),
+            "active_task_objective": state.get("active_task_objective", ""),
+            "retry_objective": state.get("retry_objective", ""),
         }
         
+        # Get current_cell - either from context or derive from execution_history if error
+        current_cell = self._get_current_cell_for_prompt(state)
+
         # Fill in template
         user_prompt = user_template.format(
-            user_query=exec_context.inputs.user_query,
-            current_cell=exec_context.inputs.context['current_cell'],
+            user_query=state.get("user_query", ""),
+            current_cell=current_cell,
             **sections, **self.PROMPT_SECTION_SUMMARIES
         )
 
@@ -1365,20 +1365,21 @@ The problem/question that was reasoned about is:
 
         return system_prompt, user_prompt
               
-    def _build_active_vs_next_section(self, exec_context: 'ExecutionContext') -> str:
+    def _build_active_vs_next_section(self, state: 'KaiState') -> str:
         """Build task list context section from input."""
-        if "active_task_objective" in exec_context.inputs.context.keys():
-            task_text = f"Generate code for this task from the task list:\n {exec_context.inputs.context['active_task_objective']}\n"
-            if "next_pending_task_objective" in exec_context.inputs.context.keys():
-                task_text += f"\nAvoid overlaps with the subsequent task in the list:\n\n{exec_context.inputs.context['next_pending_task_objective']}\n\n"
+        if "active_task_objective" in state.keys():
+            task_text = f"Generate code for this task from the task list:\n {state['active_task_objective']}\n"
+            if "next_pending_task_objective" in state.keys():
+                task_text += f"\nAvoid overlaps with the subsequent task in the list:\n\n{state['next_pending_task_objective']}\n\n"
             task_text += "You can find the full task list in the conversation history section."  
         else:
             return ""
         return task_text
     
-    def _build_cell_selection_deletion_section(self, exec_context: 'ExecutionContext') -> str:
-        reset_tasks = exec_context.inputs.context.get("reset_tasks", None)
-        backtracking_context = exec_context.inputs.backtracking_context
+    def _build_cell_selection_deletion_section(self, state: 'KaiState') -> str:
+        from kai.core.orchestration.state import BacktrackingContext
+        reset_tasks = state.get("reset_tasks", None)
+        backtracking_context = BacktrackingContext.from_state(state)
 
         task_text = []
         if reset_tasks:
@@ -1394,17 +1395,17 @@ The problem/question that was reasoned about is:
         task_text = "\n".join(task_text)
         return task_text
 
-    def _build_reasoning_critique_instructions_section(self, exec_context: 'ExecutionContext') -> str:
+    def _build_reasoning_critique_instructions_section(self, state: 'KaiState') -> str:
         """This section is made available for reasoning critique."""
-        if "reasoning_response" in exec_context.inputs.context.keys():
-            previous_reasoning = exec_context.inputs.context["reasoning_response"]
+        previous_reasoning = state.get("reasoning_response")
+        if previous_reasoning:
             task_text = [
                 "\n====== This is the proposed reasoning:",
                 previous_reasoning,
                 "====== This is the end of the proposed reasoning.",
             ]
-            if "reasoning_critique" in exec_context.inputs.context.keys():
-                reasoning_critique = exec_context.inputs.context["reasoning_critique"]
+            reasoning_critique = state.get("reasoning_critique")
+            if reasoning_critique:
                 task_text.extend([
                     "\nThis proposed reasoning is an update that was based on your feedback the last iteration:",
                     "====== This was your feedback in the previous iteration that led to this new reasoning:",
@@ -1417,12 +1418,11 @@ The problem/question that was reasoned about is:
         else:
             return ""
 
-    def _build_reasoning_instructions_section(self, exec_context: 'ExecutionContext') -> str:
+    def _build_reasoning_instructions_section(self, state: 'KaiState') -> str:
         """This section is made available for reasoning based on a critique (after the first iteration)."""
-        if ("reasoning_critique" in exec_context.inputs.context.keys() and
-            "reasoning_response" in exec_context.inputs.context.keys()):
-            previous_reasoning = exec_context.inputs.context["reasoning_response"]
-            reasoning_critique = exec_context.inputs.context["reasoning_critique"]
+        reasoning_critique = state.get("reasoning_critique")
+        previous_reasoning = state.get("reasoning_response")
+        if reasoning_critique and previous_reasoning:
             task_text = [
                 "\n====== This is the previous reasoning:",
                 previous_reasoning,
@@ -1439,31 +1439,31 @@ The problem/question that was reasoned about is:
         else:
             return ""
     
-    def _build_task_list_section(self, exec_context: 'ExecutionContext') -> str:
+    def _build_task_list_section(self, state: 'KaiState') -> str:
         """Build task list context section from input."""
         section_heading = "=== Current task list:\n"
-        if exec_context.inputs.task_list is not None and "tasks" in exec_context.inputs.task_list:
-            task_text = format_task_list(exec_context.inputs.task_list)
+        if state.get("task_list", {}) is not None and "tasks" in state.get("task_list", {}):
+            task_text = format_task_list(state.get("task_list", {}))
         else:
             return ""
         return section_heading + task_text
 
-    def _build_task_list_generation_critique_instructions_section(self, exec_context: 'ExecutionContext') -> str:
+    def _build_task_list_generation_critique_instructions_section(self, state: 'KaiState') -> str:
         """This section is made available for critiques in initial planning."""
         task_text = []
-        if "task_text_old" in exec_context.inputs.context.keys():
-            task_text_old = exec_context.inputs.context["task_text_old"]
+        task_text_old = state.get("task_text_old")
+        if task_text_old:
             task_text.extend([
                 "\nThis is the previous version of the task list:\n",
                 task_text_old
             ])
-        task_text_new = format_task_list(exec_context.inputs.task_list)
+        task_text_new = format_task_list(state.get("task_list", {}))
         task_text.extend([
             "\nThis is the current version of the task list:\n",
             task_text_new,
         ])
-        if "task_list_critique" in exec_context.inputs.context.keys():
-            task_list_critique = exec_context.inputs.context["task_list_critique"]
+        task_list_critique = state.get("task_list_critique")
+        if task_list_critique:
             task_text.extend([
                 "\nYou provided the following feedback on the previous version that led to this update:\n",
                 task_list_critique,
@@ -1471,12 +1471,12 @@ The problem/question that was reasoned about is:
         task_text.extend([""])
         task_text = "\n".join(task_text)
         return task_text
-        
-    def _build_task_list_generation_instructions_section(self, exec_context: 'ExecutionContext') -> str:
+
+    def _build_task_list_generation_instructions_section(self, state: 'KaiState') -> str:
         """This section is made available for initial planning if a critique was given (after the first iteration)."""
-        if "task_list_critique" in exec_context.inputs.context.keys():
-            task_text_new = format_task_list(exec_context.inputs.task_list)
-            task_list_critique = exec_context.inputs.context["task_list_critique"]
+        task_list_critique = state.get("task_list_critique")
+        if task_list_critique:
+            task_text_new = format_task_list(state.get("task_list", {}))
             task_text = [
                 "\nThis is the current version of the task list:\n",
                 task_text_new,
@@ -1484,19 +1484,28 @@ The problem/question that was reasoned about is:
                 task_list_critique,
                 "\nImprove the current version of the task list based on this feedback.",
             ]
-        else: 
+        else:
             task_text = [""]
         task_text = "\n".join(task_text)
         return task_text
 
-    def _build_task_list_update_critique_instructions_section(self, exec_context: 'ExecutionContext') -> str:
-        """This section is made available for initial planning if a critique was given (after the first iteration)."""
-        if "task_list_update_rationale" in exec_context.inputs.context.keys():
-            # If task_list_update_rationale is set, task_text_old is also given 
-            # because the update was performed on an existing task list. 
-            task_text_old = exec_context.inputs.context["task_text_old"]
-            task_text_new = format_task_list(exec_context.inputs.task_list)
-            task_list_update_rationale = exec_context.inputs.context["task_list_update_rationale"]
+    def _build_task_list_update_critique_instructions_section(self, state: 'KaiState') -> str:
+        """Build task list comparison section for autonomous update critique.
+
+        Uses task_list_backup (the pre-update snapshot) to show the original task list,
+        and current task_list for the updated version. This is cleaner than maintaining
+        a separate task_text_old field since LangGraph already stores the backup.
+
+        If task_list_update_rationale is set, task_list_backup is also expected to be
+        set (by _backup_task_list_node before update).
+        """
+        task_list_update_rationale = state.get("task_list_update_rationale")
+        if task_list_update_rationale:
+            # If task_list_update_rationale is set, task_list_backup is also given
+            # because the update was performed on an existing task list.
+            task_list_backup = state.get("task_list_backup")
+            task_text_old = format_task_list(task_list_backup)
+            task_text_new = format_task_list(state.get("task_list", {}))
             task_text = [
                 "\nThis is the original task list:\n",
                 task_text_old,
@@ -1505,8 +1514,8 @@ The problem/question that was reasoned about is:
                 "\nThe agent provided the following reasoning for modifying the task list:\n",
                 task_list_update_rationale,
             ]
-            if "autonomous_update_critique" in exec_context.inputs.context.keys():
-                autonomous_update_critique = exec_context.inputs.context["autonomous_update_critique"]
+            autonomous_update_critique = state.get("autonomous_update_critique")
+            if autonomous_update_critique:
                 task_text.extend([
                     "\nYou provided the following feedback on the previous version that led to this update:\n",
                     autonomous_update_critique,
@@ -1517,13 +1526,14 @@ The problem/question that was reasoned about is:
         else:
             return ""
         
-    def _build_task_list_update_instructions_section(self, exec_context: 'ExecutionContext') -> str:
-        if "autonomous_update_critique" in exec_context.inputs.context.keys():
-            # If autonomous_update_critique is set, task_text_old is also given 
-            # because the critique was performed on an update to an existing task list. 
-            task_text_old = exec_context.inputs.context["task_text_old"]
-            task_text_new = format_task_list(exec_context.inputs.task_list)
-            autonomous_update_critique = exec_context.inputs.context["autonomous_update_critique"]
+    def _build_task_list_update_instructions_section(self, state: 'KaiState') -> str:
+        autonomous_update_critique = state.get("autonomous_update_critique")
+        task_list_backup = state.get("task_list_backup")
+        if autonomous_update_critique and task_list_backup:
+            # If autonomous_update_critique is set, task_list_backup should also be present
+            # because the critique was performed on an update to an existing task list.
+            task_text_old = format_task_list(task_list_backup)
+            task_text_new = format_task_list(state.get("task_list", {}))
             task_text = "\n".join([
                 "\nThis is the original task list:\n",
                 task_text_old,
@@ -1542,7 +1552,7 @@ The problem/question that was reasoned about is:
             return task_text
         else:
             # This is the section if no critique is given - ie the standard first pass.
-            task_text = format_task_list(exec_context.inputs.task_list)
+            task_text = format_task_list(state.get("task_list", {}))
             task_text = "\n".join([
                 "\nThis is the current task list:\n",
                 task_text,
@@ -1554,12 +1564,12 @@ The problem/question that was reasoned about is:
             ])
             return task_text
             
-    def _build_reference_workflow_section(self, exec_context: 'ExecutionContext') -> str:
+    def _build_reference_workflow_section(self, state: 'KaiState') -> str:
         """Build reference workflow context section with header list."""
-        if "reference_workflow_content" not in exec_context.inputs.context:
+        if "reference_workflow_content" not in state:
             return ""
 
-        content_dict = exec_context.inputs.context["reference_workflow_content"]
+        content_dict = state["reference_workflow_content"]
         if not content_dict:
             return ""
 
@@ -1588,29 +1598,30 @@ The problem/question that was reasoned about is:
 
         return "\n".join(header_lines) + rag_text
 
-    def _build_reference_workflow_preselection_section(self, exec_context: 'ExecutionContext') -> str:
+    def _build_reference_workflow_preselection_section(self, state: 'KaiState') -> str:
         """Build reference workflow preselection context section from retrieval tool results."""
         sections = []
 
         # Add excluded workflows (workflows that returned empty indices)
-        if exec_context.inputs.excluded_workflows:
-            excluded_list = "\n".join([f"- {wf}" for wf in exec_context.inputs.excluded_workflows])
+        excluded_workflows = state.get("excluded_workflows", [])
+        if excluded_workflows:
+            excluded_list = "\n".join([f"- {wf}" for wf in excluded_workflows])
             sections.append("\n=== Session context: Excluded workflows")
             sections.append("These have been counterselected before, do not select these:\n" + excluded_list)
 
         # Add putative workflows
-        if "putative_reference_workflow_summaries" in exec_context.inputs.context:
-            rag_text = exec_context.inputs.context["putative_reference_workflow_summaries"]
+        if "putative_reference_workflow_summaries" in state:
+            rag_text = state["putative_reference_workflow_summaries"]
             sections.append("\n=== Session context: Putative reference workflows\n" + rag_text)
 
         return "\n".join(sections) if sections else ""
         
-    def _build_current_notebook_cell_selection_section(self, exec_context: 'ExecutionContext') -> str:
+    def _build_current_notebook_cell_selection_section(self, state: 'KaiState') -> str:
         """Build section showing the current notebook for cell selection."""
-        if "current_notebook_for_cell_selection" not in exec_context.inputs.context:
+        if "current_notebook_for_cell_selection" not in state:
             return ""
 
-        notebook_info = exec_context.inputs.context["current_notebook_for_cell_selection"]
+        notebook_info = state["current_notebook_for_cell_selection"]
         notebook_id = notebook_info.get("notebook_id", "unknown")
         notebook_data = notebook_info.get("notebook_data", {})
 
@@ -1640,11 +1651,11 @@ The problem/question that was reasoned about is:
 
         return "\n".join(content_parts)
 
-    def _build_reference_workflow_ids_section(self, exec_context: 'ExecutionContext') -> str:
-        if "reference_workflow_ids" not in exec_context.inputs.context:
+    def _build_reference_workflow_ids_section(self, state: 'KaiState') -> str:
+        if "reference_workflow_ids" not in state:
             return ""
 
-        reference_workflow_ids = exec_context.inputs.context["reference_workflow_ids"]
+        reference_workflow_ids = state["reference_workflow_ids"]
 
         # Don't show section if IDs are empty
         if not reference_workflow_ids or reference_workflow_ids.strip() == "":
@@ -1653,12 +1664,12 @@ The problem/question that was reasoned about is:
         section_heading = "\nCurrent selection of reference workflow IDs:"
         return section_heading + "\n" + reference_workflow_ids
 
-    def _build_retrieval_query_section(self, exec_context: 'ExecutionContext') -> str:
+    def _build_retrieval_query_section(self, state: 'KaiState') -> str:
         """Build retrieval query section."""
-        if "retrieval_queries" in exec_context.inputs.context and \
-            exec_context.inputs.context["retrieval_queries"] is not None and \
-            len(exec_context.inputs.context["retrieval_queries"]) > 0:
-            retrieval_queries = exec_context.inputs.context["retrieval_queries"]
+        if "retrieval_queries" in state and \
+            state["retrieval_queries"] is not None and \
+            len(state["retrieval_queries"]) > 0:
+            retrieval_queries = state["retrieval_queries"]
             retrieval_text = "\n".join([
                 "An agent highlighted the following topics as being of interest for improving the task list - consider these in particular when selecting new/additional reference workflows:\n",
             ] + retrieval_queries + [""])
@@ -1666,7 +1677,7 @@ The problem/question that was reasoned about is:
         else:
             return ""
             
-    def _build_rag_section(self, exec_context: 'ExecutionContext') -> str:
+    def _build_rag_section(self, state: 'KaiState') -> str:
         """Build RAG context section from RAG retrieval tool results."""
         section_heading = "\n".join([
             "\n=== Session context: Scenario-specific retrieval",
@@ -1674,14 +1685,19 @@ The problem/question that was reasoned about is:
         ])
 
         # This retrieval is optional - return empty string if not executed
-        if "rag_retrieval" not in exec_context.inputs.context:
+        if "rag_retrieval" not in state:
             return ""
 
         # RAG retrieval tool returns a string directly via results["content"]
-        rag_text = exec_context.inputs.context["rag_retrieval"]
+        rag_text = state["rag_retrieval"]
+
+        # Return empty if rag_text is None or empty (transient field cleared)
+        if not rag_text:
+            return ""
+
         return section_heading + rag_text
     
-    def _build_retry_objective_section(self, exec_context: 'ExecutionContext') -> str:
+    def _build_retry_objective_section(self, state: 'KaiState') -> str:
         """Build retry objective context section."""
         section_heading = "\n".join([
             "\n- An agent found the last attempt (see most recent cell in the execution history) to not sufficiently address the active task.",
@@ -1690,18 +1706,20 @@ The problem/question that was reasoned about is:
         ])
 
         # This retrieval is optional - return empty string if not executed
-        if "retry_objective" not in exec_context.inputs.context:
+        if "retry_objective" not in state:
             return ""
 
         # RAG retrieval tool returns a string directly via results["content"]
-        rag_text = exec_context.inputs.context["retry_objective"]
+        rag_text = state["retry_objective"]
+        if rag_text is None:
+            return ""
         return section_heading + rag_text
     
-    def _build_conversation_history_section(self, exec_context: 'ExecutionContext') -> str:
+    def _build_conversation_history_section(self, state: 'KaiState') -> str:
         """Build conversation history section."""
         section_heading = "\n=== Session context: conversation history\n"
         
-        conversation_history = exec_context.inputs.context['conversation_history']
+        conversation_history = state['conversation_history']
         if not conversation_history:
             return ""
         
@@ -1710,24 +1728,116 @@ The problem/question that was reasoned about is:
         history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in recent_conversation])
         
         return section_heading + history_text
-    
-    def _build_error_section(self, exec_context: 'ExecutionContext') -> str:
-        """Build error message section."""
+
+    def _get_current_cell_for_prompt(self, state: 'KaiState') -> str:
+        """Get current_cell content for prompt templates.
+
+        Priority:
+        1. Use current_cell from context if provided
+        2. If error occurred, extract failed cell content from execution_history
+        3. Return empty string as fallback
+
+        This ensures error recovery prompts get the cell content even when
+        VSCode doesn't send currentCell for autonomous mode.
+        """
+        # First try: direct from context
+        current_cell = state.get('current_cell')
+        if current_cell:
+            return current_cell
+
+        # Second try: extract from execution_history if there was an error
+        last_execution_failed = state.get('last_execution_failed')
+        if last_execution_failed:
+            execution_history = state.get('execution_history', [])
+            if execution_history:
+                # Get the most recent cell (first in the list, as it's ordered most recent first)
+                most_recent = execution_history[0] if execution_history else None
+                if most_recent:
+                    if isinstance(most_recent, str):
+                        # Parse the formatted string to extract cell content
+                        # Format: "> CELL at index N: FAILED\n>>Content of cell...\n{code}\n>> Error output:"
+                        cell_content = self._extract_cell_content_from_history_item(most_recent)
+                        if cell_content:
+                            return cell_content
+                    elif isinstance(most_recent, dict):
+                        # Dict format from tests
+                        return most_recent.get('code', '')
+
+        return ''
+
+    def _extract_cell_content_from_history_item(self, history_item: str) -> str:
+        """Extract cell code content from a formatted execution history item.
+
+        The format is:
+        > CELL at index N: FAILED/SUCCESS
+        Executed at HH:MM:SS, took X.XXXs
+        >>Content of cell at index N:
+        {actual code here}
+        >> Error output: / >> Outputs of cell:
+        {error/output here}
+        """
+        import re
+
+        # Find the content section between ">>Content of cell" and the next ">>" section
+        content_match = re.search(
+            r'>>Content of cell[^:]*:\n(.*?)(?=\n>> |\Z)',
+            history_item,
+            re.DOTALL
+        )
+        if content_match:
+            return content_match.group(1).strip()
+
+        return ''
+
+    def _build_error_section(
+        self,
+        state: 'KaiState',
+        max_chars: int = 8000,
+        head_chars: int = 1000,
+        tail_chars: int = 6000
+    ) -> str:
+        """Build error message section with smart truncation.
+
+        Error messages can be huge when they contain data dumps (e.g., pandas Series).
+        We truncate intelligently by keeping the start (error type) and end (traceback).
+
+        Args:
+            state: The current KaiState
+            max_chars: Maximum characters before truncation (~2K tokens default)
+            head_chars: Characters to keep from start (error type context)
+            tail_chars: Characters to keep from end (actual traceback)
+        """
         section_heading = "\n=== Session context: error in last cell\n"
 
-        last_execution_failed = exec_context.inputs.context["last_execution_failed"]
-        if last_execution_failed:
-            error_message = exec_context.inputs.context["error_message"]
-        else:
-            error_message = "Last execution passed successfully - without error."
-        return section_heading + error_message
+        last_execution_failed = state["last_execution_failed"]
+        if not last_execution_failed:
+            return section_heading + "Last execution passed successfully - without error."
 
-    def _build_execution_monitor_section(self, exec_context: 'ExecutionContext') -> str:
+        error_message = state["error_message"]
+
+        # Smart truncation: prioritize the END where the actual error/traceback is
+        # The beginning often contains huge data dumps (e.g., pandas Series repr)
+        if len(error_message) <= max_chars:
+            return section_heading + error_message
+
+        # Keep mostly the tail (actual traceback), small head for context
+        head = error_message[:head_chars]
+        tail = error_message[-tail_chars:]
+        truncated_chars = len(error_message) - head_chars - tail_chars
+
+        truncated_message = (
+            f"{head}\n\n"
+            f"[... {truncated_chars:,} characters truncated - error contained large data dump ...]\n\n"
+            f"{tail}"
+        )
+        return section_heading + truncated_message
+
+    def _build_execution_monitor_section(self, state: 'KaiState') -> str:
         """Build execution monitoring information section."""
         parts = []
 
         # Cell code
-        current_cell = exec_context.inputs.context.get("current_cell", "")
+        current_cell = state.get("current_cell", "")
         if current_cell:
             parts.append("=== Cell code currently executing:")
             parts.append("```python")
@@ -1736,15 +1846,15 @@ The problem/question that was reasoned about is:
             parts.append("")
 
         # Execution information
-        elapsed_time = exec_context.inputs.context.get("elapsed_time", 0)
-        active_task = exec_context.inputs.context.get("active_task", "Unknown")
+        elapsed_time = state.get("elapsed_time", 0)
+        active_task = state.get("active_task", "Unknown")
         parts.append("=== Execution information:")
         parts.append(f"- Elapsed time: {elapsed_time} seconds")
         parts.append(f"- Active task: {active_task}")
         parts.append("")
 
         # Partial outputs
-        partial_outputs = exec_context.inputs.context.get("partial_outputs", "")
+        partial_outputs = state.get("partial_outputs", "")
         if partial_outputs:
             parts.append("=== Partial outputs so far:")
             parts.append(partial_outputs)
@@ -1754,7 +1864,7 @@ The problem/question that was reasoned about is:
 
         return "\n".join(parts)
 
-    def _build_execution_history_section(self, exec_context: 'ExecutionContext') -> str:
+    def _build_execution_history_section(self, state: 'KaiState') -> str:
         """Build execution history section with image data removed and output limited."""
         section_heading = "\n".join([
             "\n=== Session context: execution history",
@@ -1763,15 +1873,29 @@ The problem/question that was reasoned about is:
             "The output section of each cell is further subdivided by output items, each prefixed with '>>>'.\n"
         ])
 
-        execution_history = exec_context.inputs.context['execution_history']
+        execution_history = state['execution_history']
         if execution_history:
             # Show last 10 executions universally to keep prompts manageable
-            history_text = "Starting from most recent:\n\n" + "\n\n".join(execution_history[:10])
+            # Handle both string format (from VSCode) and dict format (from tests)
+            formatted_history = []
+            for item in execution_history[:10]:
+                if isinstance(item, str):
+                    formatted_history.append(item)
+                elif isinstance(item, dict):
+                    # Format dict to string
+                    cell_idx = item.get('cell_index', '?')
+                    code = item.get('code', '')
+                    output = item.get('output', '')
+                    formatted_history.append(f"> Cell {cell_idx}\n>> Code:\n{code}\n>> Output:\n{output}")
+                else:
+                    formatted_history.append(str(item))
+
+            history_text = "Starting from most recent:\n\n" + "\n\n".join(formatted_history)
         else:
             history_text = "No cells have been executed yet."
         return section_heading + history_text
 
-    def _build_notebook_structure_section(self, exec_context: 'ExecutionContext', scenario=None) -> str:
+    def _build_notebook_structure_section(self, state: 'KaiState', scenario=None) -> str:
         """Build notebook structure section from VSCode context format."""
         section_heading = "\n".join([
             "\n=== Session context: notebook structure",
@@ -1780,10 +1904,10 @@ The problem/question that was reasoned about is:
             "The output section of each cell is further subdivided by output items, each prefixed with '>>>'.\n"
         ])
 
-        notebook_structure = exec_context.inputs.context['notebook_structure']
+        notebook_structure = state['notebook_structure']
         
         total_cells = notebook_structure['totalCells']
-        current_cell_index = exec_context.inputs.context.get('current_cell_index')
+        current_cell_index = state.get('current_cell_index')
         all_cells = notebook_structure['allCells']
         
         if total_cells == 0:
@@ -1799,7 +1923,7 @@ The problem/question that was reasoned about is:
     
     def _get_json_format_instruction(self, scenario: PromptScenario) -> Optional[str]:
         """Get JSON format instruction from schema for given scenario."""
-        from kai.core.orchestration.schemas import SCHEMA_REGISTRY
+        from kai.core.tools.schema_registry import SCHEMA_REGISTRY
         
         # Map scenarios to schema registry keys
         scenario_to_schema = {

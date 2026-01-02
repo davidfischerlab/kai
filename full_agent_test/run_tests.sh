@@ -16,7 +16,7 @@ ulimit -n 10240
 #     --api-key KEY          API key for LLM provider (required)
 #     --env-agent PATH       Python executable for agent environment (required)
 #     --env-notebook PATH    Python executable for notebook kernels (required)
-#     --config PATH          Config file (default: configs/scenario1_config.yaml)
+#     --config PATH          Config file (default: configs/scenario1_cell_type_annotation.yaml)
 #     --cases CASE1 CASE2    Run specific cases (default: from config)
 #     --replicates N-M       Run specific replicate range (default: from config)
 #     --max-iterations N     Max autonomous iterations (default: from config)
@@ -33,7 +33,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Default config file
-CONFIG_FILE="$SCRIPT_DIR/configs/scenario1_config.yaml"
+CONFIG_FILE="$SCRIPT_DIR/configs/scenario1_cell_type_annotation.yaml"
 
 # Save original arguments
 ORIGINAL_ARGS=("$@")

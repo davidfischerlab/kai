@@ -14,5 +14,3 @@ the directory structure. Use: from UI.jupyter import JupyterInterface
 """
 
 from .jupyter_interface import JupyterInterface
-
-__all__ = ['JupyterInterface']

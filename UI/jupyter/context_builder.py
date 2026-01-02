@@ -49,6 +49,7 @@ class ContextBuilder:
         self.last_execution_output: str = ""
         self.last_cell_modified_in_auto_mode: int = -1
         self.task_list: Optional[Dict[str, Any]] = None  # Task list for autonomous mode
+        self.just_executed: bool = False  # Set to True after cell execution, cleared after get_context()
 
         # Cell content hash cache for change detection
         self._cell_content_hashes: Dict[int, str] = {}
@@ -96,12 +97,14 @@ class ContextBuilder:
             'errorCellIndex': self.error_cell_index,
             'executionResult': self.last_execution_output,
             'lastExecutionFailed': self.last_execution_failed,
+            'justExecuted': self.just_executed,  # True immediately after execution
 
             # Autonomous mode flags
             'autonomousMode': autonomous_mode,
             'autonomousModeContinue': autonomous_mode_continue,
             'autonomousModeTermination': False,  # Set to True to stop autonomous mode
             'lastCellModifiedInAutoMode': self.last_cell_modified_in_auto_mode,
+            'confirmPlan': False,  # Jupyter: don't pause after planning, continue directly to execution
 
             # Backend details
             'turboEnabled': turbo_enabled,
@@ -114,6 +117,11 @@ class ContextBuilder:
         # Add task list if it exists (for autonomous mode)
         if self.task_list is not None:
             context['taskList'] = self.task_list
+
+        # Clear just_executed AFTER including it in context
+        # This ensures it's only True for ONE get_context() call
+        # The orchestrator will see it once and run completion analysis
+        self.just_executed = False
 
         return context
 
@@ -182,6 +190,7 @@ class ContextBuilder:
         """
         self.last_execution_failed = not success
         self.last_execution_output = output
+        self.just_executed = True  # Set flag so orchestrator knows to analyze completion
 
         if not success and cell_index is not None:
             self.error_cell_index = cell_index

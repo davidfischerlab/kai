@@ -1046,11 +1046,7 @@ class ReadTheDocsCrawler:
             library_name.lower() in href_lower and
             not any(skip in href_lower for skip in ['index', 'contents', 'modules', 'search'])
         )
-    
-    def _extract_api_function_urls_from_html(self, soup: BeautifulSoup, base_url: str) -> List[str]:
-        """Extract API function URLs from main page HTML (legacy method for backward compatibility)."""
-        return self._extract_readthedocs_function_urls_sync(soup, base_url)
-    
+
     async def _bulk_download_function_pages(self, session: aiohttp.ClientSession, function_urls: List[str], library_name: str, org_name: str, version: str, use_cache_only: bool = False) -> List[str]:
         """Download function pages and save them to hierarchical cache.
         

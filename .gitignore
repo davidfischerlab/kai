@@ -153,6 +153,15 @@ full_agent_test/analysis/*.png
 full_agent_test/analysis/*.csv
 full_agent_test/analysis/*.txt
 full_agent_test/analysis/notebook_reviews/
-/full_agent_test/h5ads
+full_agent_test/h5ads
+full_agent_test/vscode_test
 
 PRODUCTION_CHECK.txt
+
+# LangGraph Studio
+.langgraph_api/
+.langgraph/
+MagicMock/
+
+# Development documentation
+development_documentation/

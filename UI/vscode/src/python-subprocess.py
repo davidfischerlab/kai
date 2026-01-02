@@ -49,6 +49,10 @@ def log_error_to_file(error_msg, full_traceback):
         print(f"Failed to log error to file: {log_error}", file=sys.stderr)
 
 from kai.core.agent import KaiAgent
+from kai.core.orchestration.ui_communicator import UICommunicator
+
+# Enable VSCode mode for console messages (JSON to stdout instead of logger)
+UICommunicator.set_vscode_mode(True)
 
 # Disable telemetry and analytics
 os.environ['DISABLE_TELEMETRY'] = '1'
@@ -226,8 +230,8 @@ async def main():
 
                         if agent is not None:
                             context = request.get("context", {})
-                            # Call the workflow orchestrator's progress check handler
-                            result = await agent.workflow_orchestrator._handle_execution_progress_check(
+                            # Call the orchestrator's progress check handler
+                            result = await agent.orchestrator._handle_execution_progress_check(
                                 context=context,
                                 session_metadata={}
                             )

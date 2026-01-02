@@ -41,10 +41,9 @@ This is a reproducibility release for the attached preprint. We will fix issues 
 ## Repository structure
 This repository contains:
 
-- **development_documents:** Curated descriptions for key topics that you can read or provide to software development co-pilots to accelerate orientation in the code base. Note that co-pilots frequently get confused about the python-VS Code extension interface unless guided by prompts or context from such development documents.
 - **kai:** The python package.
 - **scripts:** Scripts for building the retrieval database from scratch.
-- **UI:** User interface with the VS Code extension.
+- **UI:** User interfaces including the VS Code extension and a Jupyter notebook interface.
 
 Note that both the python package and the VS Code extension are maintained in this same repository for now so that it's easier to iterate on their interface. They may be split into separate repositories in the future. We may also split the retrieval database (currently hosted in the python package with the agentic system) into a separate python package in the future.
 
@@ -215,3 +214,50 @@ After installing the extension, configure it in VSCode settings:
 Once installed, you can enable and disable the extension without affecting the installation in VS Code's extension menu.
 
 **Note:** Extension installation paths shown above are for MacOS. On Windows, use the path to your VSCode installation (typically `C:\Program Files\Microsoft VS Code\bin\code.cmd`). On Linux, use `code` if it's in your PATH.
+
+## Alternative: Jupyter notebook interface
+
+kai can also be used directly from a Jupyter notebook without the VS Code extension. This interface runs in the notebook itself and provides the same agentic capabilities.
+
+### Basic Usage
+
+```python
+from UI.jupyter import JupyterInterface
+
+# Initialize the interface
+kai = JupyterInterface()
+
+# Send a message to kai
+kai.send("Perform cell type annotation on this PBMC dataset")
+```
+
+### Autonomous Mode
+
+For fully autonomous execution (similar to the VS Code autonomous mode):
+
+```python
+import asyncio
+from UI.jupyter import JupyterInterface
+
+# Initialize with a notebook file
+with JupyterInterface(
+    notebook_path="my_analysis.ipynb",
+    notebook_python="/path/to/notebook/env/bin/python",
+    llm_provider="ollama-turbo",  # or "ollama", "ollama-cloud"
+    api_key="your-api-key",
+    rag_enabled=True
+) as kai:
+    # Run autonomous analysis
+    result = asyncio.run(kai.run_autonomous(
+        initial_message="Perform cell type annotation on this PBMC dataset",
+        max_iterations=100
+    ))
+
+    # Save the modified notebook
+    kai.save("my_analysis_completed.ipynb")
+
+    print(f"Completed in {result['iterations']} iterations")
+    print(f"Success: {result['success']}")
+```
+
+The Jupyter interface requires the kai python package to be installed and configured with an Ollama API key (via the `OLLAMA_API_KEY` environment variable or passed directly).

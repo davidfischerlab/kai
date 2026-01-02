@@ -127,7 +127,7 @@ class TestWorkflowSummaryRag:
                 "summary": "Complete single-cell RNA sequencing preprocessing workflow using scanpy. Includes quality control, normalization, and filtering steps for cell and gene analysis.",
                 "metadata": {
                     "title": "Scanpy preprocessing workflow",
-                    "source_repository": "scverse/scanpy-tutorials"
+                    "source_repository": "example_org/scanpy-tutorials"
                 }
             },
             {
@@ -135,7 +135,7 @@ class TestWorkflowSummaryRag:
                 "summary": "Spatial transcriptomics data analysis with squidpy. Visualization of tissue sections and spatial gene expression patterns.",
                 "metadata": {
                     "title": "Spatial transcriptomics with squidpy",
-                    "source_repository": "scverse/squidpy-tutorials"
+                    "source_repository": "example_org/squidpy-tutorials"
                 }
             },
             {
@@ -143,7 +143,7 @@ class TestWorkflowSummaryRag:
                 "summary": "T cell receptor repertoire analysis using scirpy. TCR sequence analysis and clonotype identification.",
                 "metadata": {
                     "title": "TCR analysis with scirpy",
-                    "source_repository": "scverse/scirpy-tutorials"
+                    "source_repository": "example_org/scirpy-tutorials"
                 }
             },
             {
@@ -302,7 +302,7 @@ class TestNotebookSelector:
                 "summary": "Analysis of 3k PBMCs from 10x Genomics. Quality control with scanpy including doublet detection, normalization with scran, clustering with leiden algorithm, and UMAP visualization.",
                 "metadata": {
                     "title": "PBMC 3k analysis",
-                    "source_repository": "scverse/scanpy-tutorials"
+                    "source_repository": "example_org/scanpy-tutorials"
                 }
             },
             {
@@ -310,7 +310,7 @@ class TestNotebookSelector:
                 "summary": "Spatial transcriptomics of mouse brain tissue using Visium technology. Spatial clustering, gene expression mapping, and tissue architecture analysis with squidpy.",
                 "metadata": {
                     "title": "Brain spatial transcriptomics",
-                    "source_repository": "scverse/squidpy-tutorials"
+                    "source_repository": "example_org/squidpy-tutorials"
                 }
             },
             {
@@ -318,7 +318,7 @@ class TestNotebookSelector:
                 "summary": "Integration of multiple single-cell datasets using scVI variational inference. Batch effect removal and joint embedding of datasets from different conditions.",
                 "metadata": {
                     "title": "Multi-dataset integration with scVI",
-                    "source_repository": "scverse/scvi-tools-tutorials"
+                    "source_repository": "example_org/scvi-tutorials"
                 }
             }
         ]
@@ -432,7 +432,7 @@ class TestWorkflowSummarySystemIntegration:
             "notebook_id": "comprehensive_scrnaseq_analysis",
             "metadata": {
                 "title": "Comprehensive scRNA-seq analysis pipeline",
-                "source_repository": "scverse/comprehensive-tutorials"
+                "source_repository": "example_org/comprehensive-tutorials"
             },
             "cells": [],
             "cell_count": 0

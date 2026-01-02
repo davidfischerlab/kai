@@ -102,7 +102,7 @@ class NotebookStorage:
                             notebook_data = json.load(f)
                         return notebook_data
 
-            logger.warning(f"Notebook {notebook_id} not found in any subdirectory")
+            logger.debug(f"Notebook {notebook_id} not found in any subdirectory")
             return None
 
         except Exception as e:
@@ -134,7 +134,7 @@ class NotebookStorage:
                             summary = f.read().strip()
                         return summary
 
-            logger.warning(f"Summary for {notebook_id} not found in any subdirectory")
+            logger.debug(f"Summary for {notebook_id} not found in any subdirectory")
             return None
 
         except Exception as e:

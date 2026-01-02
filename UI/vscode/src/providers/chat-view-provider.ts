@@ -470,7 +470,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 
             case 'run_all_cells_up_to':
                 try {
-                    const editor = vscode.window.activeNotebookEditor;
+                    // Use tracked notebook editor to handle cases where another tab is focused
+                    const editor = this.notebookOps.getNotebookEditor();
                     if (editor && data.cellIndex < editor.notebook.cellCount) {
                         // Execute cells up to the specified index
                         for (let i = 0; i <= data.cellIndex; i++) {
