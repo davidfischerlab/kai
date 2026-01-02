@@ -6,7 +6,7 @@ from .llm_interface import LLMInterface
 
 # Use TYPE_CHECKING to avoid circular imports
 if TYPE_CHECKING:
-    from kai.core.orchestration.prompt_tools import BasePromptTool
+    from kai.core.tools.prompt_base import BasePromptTool
 
 
 class LLMPool:
@@ -46,7 +46,6 @@ class LLMPool:
             "ReferenceWorkflowSelectionTool": "large_llm",
             "ReferenceWorkflowSelectionOnlyTool": "large_llm",
             "ReferenceWorkflowCellSelectionTool": "large_llm",
-            "RestartAndRerunTool": "large_llm",
             "SectionCodeReviewTool": "large_llm",
             "TaskListGenerationTool": "large_llm",
             "TaskListCritiqueTool": "large_llm",
@@ -73,7 +72,6 @@ class LLMPool:
             "ReferenceWorkflowSelectionTool": "high",
             "ReferenceWorkflowSelectionOnlyTool": "high",
             "ReferenceWorkflowCellSelectionTool": "medium",
-            "RestartAndRerunTool": "medium",
             "SectionCodeReviewTool": "high",
             "TaskListGenerationTool": "high",
             "TaskListCritiqueTool": "medium",

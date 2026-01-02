@@ -1,0 +1,13 @@
+{
+  "dockerfile_lines": [],
+  "graphs": {
+    "kai_agent": "./kai/core/orchestration/studio.py:main_graph",
+    "planning": "./kai/core/orchestration/studio.py:planning_graph",
+    "execution": "./kai/core/orchestration/studio.py:execution_graph"
+  },
+  "env": "./.env",
+  "python_version": "3.11",
+  "dependencies": [
+    "."
+  ]
+}

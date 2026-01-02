@@ -14,7 +14,6 @@ import nbformat
 from nbformat.v4 import new_code_cell, new_markdown_cell
 
 from kai.core.agent import KaiAgent
-from kai.core.orchestration.ui_communicator import UICommunicator
 from kai.utils import setup_logger
 
 from .notebook_executor import NotebookExecutor, ExecutionResult
@@ -49,7 +48,8 @@ class JupyterInterface:
         api_key: Optional[str] = None,
         rag_enabled: bool = True,
         turbo_enabled: bool = False,
-        max_task_planning_iterations: Optional[int] = None
+        max_task_planning_iterations: Optional[int] = None,
+        max_workflow_retrieval_iterations: Optional[int] = None
     ):
         """
         Initialize Jupyter interface.
@@ -66,6 +66,7 @@ class JupyterInterface:
             rag_enabled: Enable retrieval-augmented generation (default: True)
             turbo_enabled: Enable turbo mode for faster iteration (default: False)
             max_task_planning_iterations: Max planning iterations (None = use orchestrator default)
+            max_workflow_retrieval_iterations: Max workflow retrieval iterations (None = use orchestrator default)
         """
         self.notebook_path = Path(notebook_path)
 
@@ -89,7 +90,8 @@ class JupyterInterface:
             model=model,
             api_key=api_key,
             suppress_vscode_messages=True,  # Suppress all VSCode JSON output for Jupyter interface
-            max_task_planning_iterations=max_task_planning_iterations
+            max_task_planning_iterations=max_task_planning_iterations,
+            max_workflow_retrieval_iterations=max_workflow_retrieval_iterations
         )
 
         # Configuration
@@ -290,6 +292,12 @@ class JupyterInterface:
             # Autonomous loop completed
             logger.info(f"Autonomous mode finished after {iteration} iterations")
 
+            # Clear checkpoints if in TRANSIENT mode (successful completion)
+            if self.session_id and iteration < max_iterations:
+                await self.agent.orchestrator.clear_session_on_completion(
+                    self.session_id
+                )
+
             return {
                 'success': True,
                 'iterations': iteration,
@@ -372,17 +380,13 @@ class JupyterInterface:
     def _setup_message_capture(self):
         """
         Set up message capture from UICommunicator.
-
-        Intercepts messages that would normally go to VSCode stdout
-        and captures them for processing.
         """
         logger.info("[MESSAGE_CAPTURE] Setting up message capture for Jupyter interface")
-        logger.info(f"[MESSAGE_CAPTURE] Agent vscode communicator ID: {id(self.agent.vscode)}")
-        logger.info(f"[MESSAGE_CAPTURE] Orchestrator vscode communicator ID: {id(self.agent.orchestrator.vscode)}")
 
-        # Create a custom message handler that captures tool outputs
-        original_send = self.agent.vscode.send_tool_result
+        # Import UICommunicator to access class methods
+        from kai.core.orchestration.ui_communicator import UICommunicator
 
+        # Create capture functions that store messages for processing
         async def capture_tool_result(result, context):
             """Capture tool results instead of sending to stdout."""
             logger.info(f"[MESSAGE_CAPTURE] Intercepted tool result: type={result.output_type.value}, has_ui={bool(result.output_ui)}, has_workflow={bool(result.output_workflow)}")
@@ -394,14 +398,6 @@ class JupyterInterface:
                 'workflow': result.output_workflow  # Critical for task list updates!
             })
 
-            # Don't call original - we don't want JSON printed to stdout in Jupyter mode
-
-        # Monkey patch the send method to capture tool results
-        self.agent.vscode.send_tool_result = capture_tool_result
-        logger.info("[MESSAGE_CAPTURE] Monkey-patched send_tool_result")
-
-        # Also capture workflow results (for LOOP_COMPLETE detection)
-        original_send_workflow = self.agent.vscode.send_workflow_result
 
         async def capture_workflow_result(field, state):
             """Capture workflow results (e.g., LOOP_COMPLETE)."""
@@ -411,10 +407,12 @@ class JupyterInterface:
                 'data': {field: state},
                 'workflow': {}
             })
-            # Don't call original - already suppressed by suppress_vscode_messages=True
+            # Don't send to stdout - we're capturing for Jupyter processing
 
-        self.agent.vscode.send_workflow_result = capture_workflow_result
-        logger.info("[MESSAGE_CAPTURE] Monkey-patched send_workflow_result")
+        # Set class-level hooks - these capture messages from ALL UICommunicator instances
+        UICommunicator.set_tool_result_hook(capture_tool_result)
+        UICommunicator.set_workflow_result_hook(capture_workflow_result)
+        logger.info("[MESSAGE_CAPTURE] Set class-level hooks on UICommunicator")
 
         # Note: We don't need to suppress console messages here
         # because suppress_vscode_messages=True in KaiAgent already sets _disabled=True
@@ -548,7 +546,7 @@ class JupyterInterface:
         cell_type = code_response.get('cell_type', 'code')
         positioning_info = code_response.get('positioning_info', {})
         target_cell = positioning_info.get('target_cell', -1)
-        should_replace = code_response.get('should_replace_code') == "true"
+        should_replace = code_response.get('should_replace') is True
         recovery_strategy = code_response.get('error_recovery_strategy')
 
         logger.info(f"Execute code request: cell_type={cell_type}, target={target_cell}, replace={should_replace}")
@@ -1042,6 +1040,254 @@ class JupyterInterface:
             nbformat.write(self.notebook, f)
 
         logger.info("Notebook saved successfully")
+
+    # =========================================================================
+    # Session Restart / Resume (SqliteSaver persistence)
+    # =========================================================================
+
+    async def list_resumable_sessions(self) -> List[Dict[str, Any]]:
+        """List sessions that can be resumed from SqliteSaver checkpoints.
+
+        Only works when SqliteSaver is configured (CHECKPOINT_DB_PATH set).
+        MemorySaver sessions are lost when the process exits.
+
+        Returns:
+            List of session info dicts with keys:
+            - session_id: Thread ID for resuming
+            - notebook_uri: Path to notebook (if stored in state)
+            - last_cell_modified: Last cell modified by agent
+            - timestamp: Last checkpoint timestamp
+            - task_count: Number of tasks in task list
+            - completed_count: Number of completed tasks
+        """
+        from kai.core.persistence.checkpointer import is_sqlite_checkpointer
+
+        checkpointer = self.agent.orchestrator.checkpointer
+
+        if not is_sqlite_checkpointer(checkpointer):
+            logger.warning("Session resume requires SqliteSaver. Set CHECKPOINT_DB_PATH in settings.")
+            return []
+
+        sessions = []
+        try:
+            # SqliteSaver supports list(None) to get all threads
+            threads = list(checkpointer.list(None))
+
+            for thread_info in threads:
+                thread_id = thread_info.get("thread_id", "")
+                if not thread_id:
+                    continue
+
+                # Get latest state for this thread
+                config = {"configurable": {"thread_id": thread_id}}
+                try:
+                    state = await self.agent.orchestrator.main_graph.aget_state(config)
+                    if state and hasattr(state, 'values') and state.values:
+                        values = state.values
+                        task_list = values.get("task_list", {})
+                        tasks = task_list.get("tasks", [])
+
+                        sessions.append({
+                            "session_id": thread_id,
+                            "notebook_uri": values.get("notebook_uri"),
+                            "last_cell_modified": values.get("last_cell_modified_in_auto_mode"),
+                            "timestamp": state.metadata.get("ts") if state.metadata else None,
+                            "task_count": len(tasks),
+                            "completed_count": sum(1 for t in tasks if t.get("status") == "completed"),
+                        })
+                except Exception as e:
+                    logger.debug(f"Could not get state for thread {thread_id}: {e}")
+
+        except Exception as e:
+            logger.error(f"Failed to list sessions: {e}")
+
+        return sessions
+
+    async def restart_session(
+        self,
+        session_id: str,
+        max_iterations: int = 100,
+    ) -> Dict[str, Any]:
+        """Restart a previously interrupted session.
+
+        Iteration Model (see kai.core.orchestration.graphs.main):
+        ==========================================================
+        LangGraph checkpoints capture state after each node, but Jupyter
+        cell execution happens as a side effect after code_generation.
+
+        On restart:
+        1. Kernel is restarted (fresh Python state)
+        2. All cells up to last_cell_modified are re-executed
+        3. This brings notebook to consistent state matching checkpoint
+        4. LangGraph resumes from checkpoint, continuing with next iteration
+
+        LangGraph doesn't track fine-grained Jupyter state (inserted vs executed).
+        The notebook save + kernel re-run pattern handles state reconciliation.
+
+        Args:
+            session_id: Session ID to restart (from list_resumable_sessions)
+            max_iterations: Maximum iterations for continued autonomous execution
+
+        Returns:
+            Dict with restart summary (success, iterations, etc.)
+        """
+        from kai.core.persistence.checkpointer import is_sqlite_checkpointer
+
+        checkpointer = self.agent.orchestrator.checkpointer
+
+        if not is_sqlite_checkpointer(checkpointer):
+            return {
+                'success': False,
+                'error': 'Session restart requires SqliteSaver. Set CHECKPOINT_DB_PATH in settings.',
+            }
+
+        # Get checkpoint state
+        config = {"configurable": {"thread_id": session_id}}
+        try:
+            state = await self.agent.orchestrator.main_graph.aget_state(config)
+            if not state or not hasattr(state, 'values') or not state.values:
+                return {
+                    'success': False,
+                    'error': f'No checkpoint found for session {session_id}',
+                }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'Failed to load checkpoint: {e}',
+            }
+
+        values = state.values
+
+        # Get notebook path from checkpoint
+        notebook_uri = values.get("notebook_uri")
+        if not notebook_uri:
+            return {
+                'success': False,
+                'error': 'Checkpoint does not contain notebook_uri. Cannot restart.',
+            }
+
+        # Verify notebook exists
+        notebook_path = Path(notebook_uri)
+        if not notebook_path.exists():
+            return {
+                'success': False,
+                'error': f'Notebook not found: {notebook_path}',
+            }
+
+        # Get last cell modified (for re-run target)
+        last_cell_modified = values.get("last_cell_modified_in_auto_mode", -1)
+        if last_cell_modified is None:
+            last_cell_modified = -1
+
+        logger.info(f"Restarting session {session_id}")
+        logger.info(f"  Notebook: {notebook_path}")
+        logger.info(f"  Last cell modified: {last_cell_modified}")
+
+        # Load the notebook
+        with open(notebook_path, 'r', encoding='utf-8') as f:
+            self.notebook = nbformat.read(f, as_version=4)
+        self.notebook_path = notebook_path
+        self.context_builder = ContextBuilder(self.notebook, str(notebook_path))
+
+        # Restart kernel
+        logger.info("Restarting kernel...")
+        self.executor.restart_kernel()
+
+        # Re-run cells up to and including last_cell_modified
+        # This brings the notebook to the state it was in when interrupted
+        rerun_target = last_cell_modified if last_cell_modified >= 0 else len(self.notebook.cells) - 1
+
+        logger.info(f"Re-running cells 0 to {rerun_target}...")
+        for idx in range(min(rerun_target + 1, len(self.notebook.cells))):
+            cell = self.notebook.cells[idx]
+            if cell.cell_type == 'code':
+                logger.info(f"  Re-executing cell {idx}")
+                exec_result = self.executor.execute_cell(
+                    code=cell.source,
+                    timeout=1800  # 30 minutes
+                )
+                self._update_cell_outputs(idx, exec_result)
+                self.context_builder.add_to_execution_history(idx, exec_result, cell.source)
+
+                if not exec_result.success:
+                    logger.error(f"Cell {idx} failed during restart: {exec_result.error}")
+                    return {
+                        'success': False,
+                        'error': f'Cell {idx} failed during re-execution',
+                        'cell_index': idx,
+                        'cell_error': exec_result.error,
+                    }
+
+        self.save()
+        logger.info("Notebook cells re-executed successfully")
+
+        # Set up for autonomous continuation
+        self.autonomous_active = True
+        self.session_id = session_id
+        self._setup_message_capture()
+
+        # Continue autonomous loop from checkpoint
+        # The checkpoint contains task_list, so LangGraph will continue from where it left off
+        iteration = 0
+
+        try:
+            while self.autonomous_active and iteration < max_iterations:
+                iteration += 1
+                logger.info(f"[RESTART] Iteration {iteration}/{max_iterations}")
+
+                self.pending_tool_messages = []
+                self.current_iteration_actions = []
+
+                # Build context from current notebook state
+                context = self.context_builder.get_context(
+                    autonomous_mode=True,
+                    autonomous_mode_continue=True,  # Continue mode
+                    rag_enabled=self.rag_enabled,
+                    turbo_enabled=self.turbo_enabled
+                )
+
+                # Send empty message (continue mode)
+                response, self.session_id = await self.agent.chat(
+                    user_input="",
+                    session_id=self.session_id,
+                    user_id="jupyter_user",
+                    context=context
+                )
+
+                # Check completion
+                if not self.agent.is_autonomous_active(self.session_id):
+                    logger.info("Autonomous mode completed")
+                    break
+
+                loop_complete = await self._process_tool_messages()
+                if loop_complete:
+                    break
+
+                self._log_iteration_summary(iteration, max_iterations)
+
+            # Clear checkpoints if in TRANSIENT mode (successful completion)
+            if iteration < max_iterations:
+                await self.agent.orchestrator.clear_session_on_completion(
+                    session_id
+                )
+
+            return {
+                'success': True,
+                'iterations': iteration,
+                'final_state': 'completed' if iteration < max_iterations else 'max_iterations_reached',
+                'session_id': session_id,
+            }
+
+        except Exception as e:
+            logger.error(f"Error during restart continuation: {e}", exc_info=True)
+            return {
+                'success': False,
+                'error': str(e),
+                'iterations': iteration,
+            }
+
+        finally:
+            self.autonomous_active = False
 
     def shutdown(self):
         """Shutdown kernel and cleanup resources."""

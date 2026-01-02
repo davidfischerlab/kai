@@ -1,49 +1,80 @@
-"""Consolidated tools for Kai agent."""
+"""Consolidated tools for Kai agent.
+
+This module provides:
+- Individual atomic tools (LLM and deterministic)
+- Workflow tools for RAG retrieval
+- create_consolidated_tools() factory function
+- Schema registry for structured output
+
+NOTE: Orchestration is handled by LangGraph routing in langgraph_orchestrator.py,
+not by wrapper/composite tools.
+"""
 
 from typing import Dict
 from kai.core.llm_interface import LLMInterface
 from kai.retrieval import ChromaDbManager
-from kai.core.orchestration.base_tool import BaseTool
+from kai.core.tools.base import BaseTool, ToolResult, ToolOutputType
 
-from .rag import SearchCodeSnippetsTool
-from .workflow_search import SearchWorkflowsTool, WorkflowRefinementTool
-from .code_generation import GenerateCodeTool, UpdateCodeTool
-from .execution import ExecuteCellTool, RestartAndRerunTool
-from .task_management import ManageProgressTool, PlanTasksTool
-from .error_handling import HandleErrorTool, BacktrackTool, ExecutionMonitorTool
-from .interaction import (
-    ClassifyIntentTool,
-    AnswerQuestionTool,
-    ReviewCodeTool,
-    RespondWithReasoningTool
+# Workflow tools (multi-step pipelines for RAG)
+from .search_workflows import SearchWorkflowsTool, WorkflowRefinementTool
+from .execute_cell import ExecuteCellTool
+from .notebook_operations import NotebookOperationsTool
+
+# Task tools
+from .task_list_generation import TaskListGenerationTool, TaskListGeneration
+from .task_list_critique import TaskListCritiqueTool, TaskListCritique
+from .autonomous_mark_completion import AutonomousMarkCompletionTool, AutonomousMarkCompletion
+from .autonomous_update_tasks import AutonomousUpdateTasksTool, AutonomousTaskUpdate
+from .autonomous_update_critique import AutonomousUpdateCritiqueTool, AutonomousUpdateCritique
+from .mark_next_task_active import MarkNextTaskActiveTool
+
+# Code tools
+from .code_update import CodeUpdateTool
+from .cell_positioning import CellPositioningTool, CellPositioning
+from .code_generation import CodeGenerationTool, CodeGenerationWithGuidanceTool
+
+# Error/recovery tools
+from .error_recovery import ErrorRecoveryTool, ErrorRecoveryStrategy
+from .backtrack_recovery import BacktrackRecoveryTool, BacktrackRecoveryStrategy
+from .cell_selection_deletion import CellSelectionDeletionTool, CellDeletionSelection
+from .execution_monitor import ExecutionMonitorTool, ExecutionMonitor
+
+# Intent/interaction tools
+from .intent_classification import IntentClassificationTool, IntentClassification
+from .autoloop_intent_classification import AutoLoopIntentClassificationTool, AutoLoopIntentClassification
+from .question_answering import QuestionAnsweringTool
+from .section_code_review import SectionCodeReviewTool, SectionCodeReview
+
+# Reasoning tools
+from .reasoning_response_with_guidance import ReasoningResponseWithGuidanceTool
+from .reasoning_critique import ReasoningCritiqueTool, ReasoningCritique
+
+# Reference workflow tools
+from .reference_workflow_selection import (
+    ReferenceWorkflowSelectionTool,
+    ReferenceWorkflowSelectionOnlyTool,
+    ReferenceWorkflowSelection,
+    ReferenceWorkflowSelectionOnly,
 )
-from .notebook import NotebookOperationsTool
+from .reference_workflow_cell_selection import (
+    ReferenceWorkflowCellSelectionTool,
+    ReferenceWorkflowCellSelection,
+)
 
-# Dev branch tools for deterministic routing
-from kai.core.orchestration.deterministic_tools import (
-    MarkNextTaskActiveTool,
-    CodeRetrievalTool,
-    CellDeletionTool,
+# Deterministic tools
+from .rag_retrieval import CodeRetrievalTool
+from .set_positioning_from_last_cell import SetPositioningFromLastCellTool, IncrementPositioningTool
+from .reference_workflow_query_preparation import (
     ReferenceWorkflowQueryPreparationTool,
     FilterUnusedReferenceWorkflowsTool,
-    SetPositioningFromLastCellTool,
 )
-from kai.core.orchestration.prompt_tools import (
-    AutonomousMarkCompletionTool,
-    CellPositioningTool,
-    CodeGenerationWithGuidanceTool,
-    ReasoningResponseWithGuidanceTool,
-    CodeUpdateTool,
-    ErrorRecoveryTool,
-    BacktrackRecoveryTool,
-    AutonomousUpdateTasksTool,
-    AutonomousUpdateCritiqueTool,
-    TaskListGenerationTool,
-    TaskListCritiqueTool,
-    ReasoningCritiqueTool,
-    CellSelectionDeletionTool,
-    RestartAndRerunTool as PromptRestartAndRerunTool
-)
+from .cell_deletion import CellDeletionTool
+
+# Common schemas
+from .common_schemas import TaskItem, TaskStatusUpdate
+
+# Schema registry
+from .schema_registry import SCHEMA_REGISTRY
 
 
 def create_consolidated_tools(
@@ -51,7 +82,7 @@ def create_consolidated_tools(
     knowledge_base: ChromaDbManager
 ) -> Dict[str, BaseTool]:
     """
-    Create all consolidated tools for the agent.
+    Create all tools for the agent.
 
     Args:
         llm: LLM interface for prompt-based tools
@@ -61,87 +92,60 @@ def create_consolidated_tools(
         Dictionary mapping tool names to tool instances
     """
     return {
-        "search_code_snippets": SearchCodeSnippetsTool(knowledge_base),
+        # Workflow tools
         "search_workflows": SearchWorkflowsTool(llm, knowledge_base, mode="full"),
-        "search_workflows_only": SearchWorkflowsTool(llm, knowledge_base, mode="selection_only"),
+        "search_workflows_only": SearchWorkflowsTool(
+            llm, knowledge_base, mode="selection_only"
+        ),
         "workflow_refinement": WorkflowRefinementTool(llm, knowledge_base),
 
-        "generate_code": GenerateCodeTool(llm, with_guidance=True),
-        "generate_code_simple": GenerateCodeTool(llm, with_guidance=False),
-        "update_code": UpdateCodeTool(llm),
-
+        # Execution tools
         "execute_cell": ExecuteCellTool(),
-        "restart_and_rerun": RestartAndRerunTool(llm),
 
-        "plan_tasks": PlanTasksTool(llm, use_critique=True),
-        "manage_progress": ManageProgressTool(llm, use_critique=True),
-
-        "handle_error": HandleErrorTool(llm),
-        "backtrack": BacktrackTool(llm),
-        "execution_monitor": ExecutionMonitorTool(llm),
-
-        "classify_intent": ClassifyIntentTool(llm, mode="regular"),
-        "classify_intent_autonomous": ClassifyIntentTool(llm, mode="autonomous"),
-        "answer_question": AnswerQuestionTool(llm),
-        "review_code": ReviewCodeTool(llm),
-        "respond_with_reasoning": RespondWithReasoningTool(llm, use_critique=True),
+        # Intent classification
+        "classify_intent": IntentClassificationTool(llm),
+        "classify_intent_autonomous": AutoLoopIntentClassificationTool(llm),
+        "answer_question": QuestionAnsweringTool(llm),
+        "review_code": SectionCodeReviewTool(llm),
 
         "notebook_operations": NotebookOperationsTool(),
 
-        # Dev branch tools for deterministic routing - Core tools
+        # Task tools
         "mark_next_task_active": MarkNextTaskActiveTool(),
         "autonomous_mark_completion": AutonomousMarkCompletionTool(llm),
-        "cell_positioning": CellPositioningTool(llm),
-        "code_generation_with_guidance": CodeGenerationWithGuidanceTool(llm),
-        "reasoning_response_with_guidance": ReasoningResponseWithGuidanceTool(llm),
-
-        # Error recovery tools
-        "code_update": CodeUpdateTool(llm),
-        "error_recovery": ErrorRecoveryTool(llm),
-        "restart_and_rerun_prompt": PromptRestartAndRerunTool(),  # From prompt_tools
-
-        # Task update tools
         "autonomous_update_tasks": AutonomousUpdateTasksTool(llm),
         "autonomous_update_critique": AutonomousUpdateCritiqueTool(llm),
+        "task_list_generation": TaskListGenerationTool(llm),
+        "task_list_critique": TaskListCritiqueTool(llm),
+
+        # Code generation tools
+        "cell_positioning": CellPositioningTool(llm),
+        "code_generation": CodeGenerationTool(llm),  # Simple code gen for regular mode
+        "code_generation_with_guidance": CodeGenerationWithGuidanceTool(llm),
+        "code_update": CodeUpdateTool(llm),
+
+        # Reasoning tools
+        "reasoning_response_with_guidance": ReasoningResponseWithGuidanceTool(llm),
+        "reasoning_critique": ReasoningCritiqueTool(llm),
+
+        # Error recovery tools
+        "error_recovery": ErrorRecoveryTool(llm),
+        "execution_monitor": ExecutionMonitorTool(llm),
 
         # Backtracking tools
         "backtrack_recovery": BacktrackRecoveryTool(llm),
         "cell_selection_deletion": CellSelectionDeletionTool(llm),
         "cell_deletion": CellDeletionTool(),
 
-        # Positioning tools (for standard continue/retry - matches kai_dev behavior)
+        # Positioning tools
         "set_positioning_from_last_cell": SetPositioningFromLastCellTool(),
-
-        # Critique tools
-        "task_list_generation": TaskListGenerationTool(llm),
-        "task_list_critique": TaskListCritiqueTool(llm),
-        "reasoning_critique": ReasoningCritiqueTool(llm),
 
         # RAG tools
         "rag_retrieval": CodeRetrievalTool(knowledge_base),
 
-        # Reference workflow tools (for planning)
-        "reference_workflow_query_preparation": ReferenceWorkflowQueryPreparationTool(llm),
+        # Reference workflow tools
+        "reference_workflow_query_preparation": ReferenceWorkflowQueryPreparationTool(
+            llm
+        ),
         "filter_unused_reference_workflows": FilterUnusedReferenceWorkflowsTool(),
     }
-
-
-__all__ = [
-    'create_consolidated_tools',
-    'SearchCodeSnippetsTool',
-    'SearchWorkflowsTool',
-    'GenerateCodeTool',
-    'UpdateCodeTool',
-    'ExecuteCellTool',
-    'RestartAndRerunTool',
-    'ManageProgressTool',
-    'PlanTasksTool',
-    'HandleErrorTool',
-    'BacktrackTool',
-    'ExecutionMonitorTool',
-    'ClassifyIntentTool',
-    'AnswerQuestionTool',
-    'ReviewCodeTool',
-    'RespondWithReasoningTool',
-    'NotebookOperationsTool',
-]

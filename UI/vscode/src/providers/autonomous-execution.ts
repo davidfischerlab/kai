@@ -369,9 +369,10 @@ export class AutonomousExecution {
             const code = codeResponse.code?.trim();
             const cellNumber = codeResponse.positioning_info?.target_cell;
             const recoveryStrategy = codeResponse.error_recovery_strategy;
-            const shouldReplace = codeResponse.should_replace_code === "true";
+            const shouldReplace = codeResponse.should_replace === true;
+            const restartRequired = codeResponse.restart_required === true;  // For backtracking
 
-            console.log('[KAI] Using cell position:', cellNumber, 'with should replace:', shouldReplace, ' and recovery strategy:', recoveryStrategy);
+            console.log('[KAI] Using cell position:', cellNumber, 'with should replace:', shouldReplace, ', recovery strategy:', recoveryStrategy, ', restart required:', restartRequired);
 
             let notebookCell: vscode.NotebookCell;
             const cellType = codeResponse.cell_type || "code";  // Default to code if not specified
@@ -393,7 +394,16 @@ export class AutonomousExecution {
                         await this._handleRestartAndRunToCellStrategy(cellNumber);
                     }
                 } else {
-                    notebookCell = await this.notebookOps.addCode(code, cellNumber, true);
+                    // For backtracking with restart: add cell first (don't execute yet),
+                    // then restart and run all cells up to and including the new cell
+                    if (restartRequired) {
+                        // Add cell without executing
+                        notebookCell = await this.notebookOps.addCode(code, cellNumber, false);
+                        // Restart and run all cells up to the new cell
+                        await this._handleRestartAndRunToCellStrategy(notebookCell.index);
+                    } else {
+                        notebookCell = await this.notebookOps.addCode(code, cellNumber, true);
+                    }
                 }
             }
 

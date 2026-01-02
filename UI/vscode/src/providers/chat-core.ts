@@ -358,8 +358,13 @@ export class ChatCore {
      */
     public async handleTaskListMessage(displayResponse: any): Promise<void> {
         try {
-            // Skip autonomous-related display messages if autonomous mode is no longer active
-            if (this.getAutonomousExecutionStatus && !this.getAutonomousExecutionStatus()) {
+            // Skip critique/notification messages if autonomous mode is no longer active,
+            // but ALWAYS process task list text updates (they show final completion status)
+            const autonomousActive = this.getAutonomousExecutionStatus && this.getAutonomousExecutionStatus();
+            const hasTaskListText = displayResponse.text !== undefined;
+
+            if (!autonomousActive && !hasTaskListText) {
+                // Skip critique-only messages when not in autonomous mode
                 return;
             }
 

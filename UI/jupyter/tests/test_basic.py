@@ -370,7 +370,7 @@ def test_handle_execute_code_markdown():
                     'code': '## Reasoning\nThis is test reasoning',
                     'cell_type': 'markdown',
                     'positioning_info': {'target_cell': -1},
-                    'should_replace_code': 'false'
+                    'should_replace': False
                 }
 
                 # Call _handle_execute_code (this is where the bug was)

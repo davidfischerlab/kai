@@ -1,5 +1,5 @@
 def format_task_list(task_list) -> str:
-    if "tasks" not in task_list:
+    if task_list is None or "tasks" not in task_list:
         return ""
 
     task_text = ""

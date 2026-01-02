@@ -202,7 +202,6 @@ class ChromaDbManager:
     2. SEARCH TYPE SPECIALIZATION:
        - search_api(query, tools=None) → API reference search (functions, classes, modules)
        - search_workflows(query, tools=None, granularity="auto") → Tutorial/example search
-       - search_mixed(query) → Current unified search for backward compatibility
     
     3. CONSISTENT HIERARCHICAL GRANULARITY:
        - API docs: package → module → class → function
@@ -1258,7 +1257,7 @@ class ChromaDbManager:
                 doc_id = f"class_{metadata.get('class_name', 'unknown')}"
             elif doc_type == "workflow":
                 doc_id = f"workflow_{metadata.get('workflow_name', 'unknown')}"
-            elif doc_type == "tutorial":  # Legacy support
+            elif doc_type == "tutorial":
                 doc_id = f"workflow_{metadata.get('tutorial_name', metadata.get('workflow_name', 'unknown'))}"
             else:
                 doc_id = f"{doc_type}_{len(collection.get()['ids'])}"

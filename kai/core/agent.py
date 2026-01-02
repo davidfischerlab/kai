@@ -34,7 +34,7 @@ class KaiAgent:
         orchestrator: LangGraphOrchestrator for tool execution and chaining
     
     Example:
-        agent = BioinformaticsAgent(llm_provider="ollama", model="gpt-oss:20b")
+        agent = KaiAgent(llm_provider="ollama", model="gpt-oss:20b")
         response, session_id = await agent.chat("Generate scanpy code")
     """
     llm_interface: LLMInterface
@@ -53,6 +53,7 @@ class KaiAgent:
         api_key: Optional[str] = None,
         suppress_vscode_messages: bool = False,  # Suppress all VSCode JSON messages (for Jupyter interface)
         max_task_planning_iterations: Optional[int] = None,  # Max planning iterations (None = use orchestrator default)
+        max_workflow_retrieval_iterations: Optional[int] = None,  # Max workflow retrieval iterations (None = use orchestrator default)
     ):
         self.settings = settings or Settings.from_env()
         knowledge_path = knowledge_path or self.settings.KNOWLEDGE_BASE_PATH
@@ -76,7 +77,7 @@ class KaiAgent:
         if suppress_vscode_messages:
             self.vscode._disabled = True
 
-        # Build orchestrator kwargs, only passing max_task_planning_iterations if explicitly set
+        # Build orchestrator kwargs, only passing iteration limits if explicitly set
         orchestrator_kwargs = {
             "llm_interface": self.llm_interface,
             "knowledge_base": self.knowledge_base,
@@ -84,6 +85,8 @@ class KaiAgent:
         }
         if max_task_planning_iterations is not None:
             orchestrator_kwargs["max_task_planning_iterations"] = max_task_planning_iterations
+        if max_workflow_retrieval_iterations is not None:
+            orchestrator_kwargs["max_workflow_retrieval_iterations"] = max_workflow_retrieval_iterations
 
         self.orchestrator = LangGraphOrchestrator(**orchestrator_kwargs)
         
@@ -169,26 +172,34 @@ class KaiAgent:
             if not self._suppress_vscode_messages:
                 self.vscode.enable_communication()
 
-            # Get session timestamp consisting of date and time:
-            date_str = datetime.now().strftime("%Y-%m-%d")
-            time_str = datetime.now().strftime('%H-%M-%S')
-            session_timestamp = f"{date_str}_{time_str}"
+            # Get session timestamp consisting of date and time (with milliseconds):
+            now = datetime.now()
+            date_str = now.strftime("%Y-%m-%d")
+            time_str = now.strftime('%H-%M-%S')
+            ms_str = f"{now.microsecond // 1000:03d}"  # Milliseconds as 3 digits
+            session_timestamp = f"{date_str}_{time_str}-{ms_str}"
             
             # Get notebook URI from original contexts
             notebook_uri = context.get('notebookUri')
 
+            iter_now = datetime.now()
+            iter_time_str = iter_now.strftime('%H-%M-%S')
+            iter_ms_str = f"{iter_now.microsecond // 1000:03d}"
             self.session_metadata.update({
                 "active": True,
                 "session_id": session_id,
                 "session_timestamp": session_timestamp,
                 "notebook_uri": notebook_uri,
                 "iteration_counter": 0,
-                "iteration_timestamp": datetime.now().strftime('%H-%M-%S'),
+                "iteration_timestamp": f"{iter_time_str}-{iter_ms_str}",
             })
         elif self.is_autonomous_active(session_id):
-            # Update iteration meta data:
+            # Update iteration meta data (with milliseconds for distinguishing fast calls):
             self.session_metadata["iteration_counter"] += 1
-            self.session_metadata["iteration_timestamp"] = datetime.now().strftime('%H-%M-%S')
+            iter_now = datetime.now()
+            iter_time_str = iter_now.strftime('%H-%M-%S')
+            iter_ms_str = f"{iter_now.microsecond // 1000:03d}"
+            self.session_metadata["iteration_timestamp"] = f"{iter_time_str}-{iter_ms_str}"
         
         # Extract all VSCode items explicitly and rename from camelCase to snake_case
         context_data = {
@@ -230,7 +241,7 @@ class KaiAgent:
             context_data['retrieval_queries'] = [user_input]
             context_data['planning_phase'] = None  # Will be set by router on first routing decision
             context_data['workflow_retrieval_iteration'] = 0  # Start at 0, incremented by search_workflows tool
-            context_data['task_planning_iteration'] = -1  # Start at -1, first increment gives 0 (matching kai_dev's for loop)
+            context_data['task_planning_iteration'] = -1  # Start at -1, first increment gives 0
             logger.debug(f"[AGENT] Initialized planning state: retrieval_queries with user_input (len={len(user_input)})")
 
         # Parse error messages:
