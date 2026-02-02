@@ -167,9 +167,8 @@ class BaseTool(ABC):
                     # Increase context reduction factor for next attempt
                     context_length_factor *= 2.0
 
-                except Exception as e:
-                    # Unexpected errors - don't retry, propagate immediately
-                    logger.error(f"Tool {self.name} unexpected error: {e}")
+                except Exception:
+                    # Unexpected errors - propagate immediately with full traceback
                     raise
 
         return node_function

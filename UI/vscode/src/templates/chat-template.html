@@ -48,8 +48,30 @@
         }
         
         .message.assistant.thinking {
-            opacity: 0.6;
-            font-style: italic;
+            background: transparent;
+            border: none;
+            padding: 8px 12px;
+        }
+
+        .activity-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--vscode-descriptionForeground);
+            font-size: 12px;
+        }
+
+        .spinner {
+            width: 12px;
+            height: 12px;
+            border: 2px solid var(--vscode-descriptionForeground);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
         
         .message.assistant.button-action {
@@ -221,7 +243,7 @@
         button:hover {
             background: var(--vscode-button-hoverBackground);
         }
-        
+
         .quick-actions {
             display: flex;
             gap: 5px;
@@ -292,15 +314,470 @@
         }
         
         /* Auto-follow button states - only background color changes, emoji stays the same */
+
+        /* Notebook selector styles */
+        .notebook-selector {
+            flex: 1;
+            min-width: 100px;
+            max-width: 200px;
+            padding: 4px 8px;
+            font-size: 0.85em;
+            background: var(--vscode-input-background);
+            color: var(--vscode-input-foreground);
+            border: 1px solid var(--vscode-widget-border);
+            border-radius: 4px;
+            cursor: pointer;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .notebook-selector:focus {
+            outline: 1px solid var(--vscode-focusBorder);
+        }
+
+        .notebook-selector option {
+            background: var(--vscode-dropdown-background);
+            color: var(--vscode-dropdown-foreground);
+        }
+
+        /* Mode selector styles */
+        .mode-selector {
+            display: flex;
+            gap: 2px;
+            background: var(--vscode-input-background);
+            border-radius: 6px;
+            padding: 2px;
+            border: 1px solid var(--vscode-widget-border);
+        }
+
+        .mode-btn {
+            font-size: 0.85em;
+            padding: 4px 8px;
+            height: auto;
+            min-height: 26px;
+            border-radius: 4px;
+            background: transparent;
+            color: var(--vscode-foreground);
+            opacity: 0.7;
+            transition: all 0.15s ease;
+        }
+
+        .mode-btn:hover {
+            opacity: 1;
+            background: var(--vscode-list-hoverBackground);
+        }
+
+        .mode-btn.active {
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            opacity: 1;
+            font-weight: bold;
+        }
+
+        /* Cell reference link styles */
+        .cell-ref {
+            color: var(--vscode-textLink-foreground);
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
+        .cell-ref:hover {
+            color: var(--vscode-textLink-activeForeground);
+        }
+
+        /* Intent suggestion pill styles */
+        .intent-suggestions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+            padding-top: 8px;
+            border-top: 1px solid var(--vscode-widget-border);
+        }
+
+        .suggestion-pill {
+            padding: 5px 12px;
+            border-radius: 16px;
+            background: var(--vscode-button-secondaryBackground);
+            border: 1px solid var(--vscode-widget-border);
+            color: var(--vscode-button-secondaryForeground);
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: all 0.15s ease;
+        }
+
+        .suggestion-pill:hover {
+            background: var(--vscode-button-secondaryHoverBackground);
+            border-color: var(--vscode-focusBorder);
+        }
+
+        /* Checkpoint/continue bubble - standard styling with play button */
+        .message.assistant.checkpoint {
+            /* Same as normal assistant message - no special styling */
+        }
+
+        .continue-bubble-content {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .continue-bubble-text {
+            font-size: 0.9em;
+            color: var(--vscode-descriptionForeground);
+        }
+
+        .continue-play-btn {
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: none;
+            border-radius: 3px;
+            padding: 2px 8px;
+            cursor: pointer;
+            font-size: 0.85em;
+            line-height: 1.4;
+        }
+
+        .continue-play-btn:hover {
+            background: var(--vscode-button-hoverBackground);
+        }
+
+        /* Checkpoint message should be minimal */
+        .message.checkpoint {
+            padding: 6px 10px;
+            background: transparent;
+            border: none;
+        }
+
+        /* Learning mode pause message styles - green for continue */
+        .message.assistant.learning-pause {
+            background: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.4);
+            animation: learningPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes learningPulse {
+            0%, 100% {
+                box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3);
+            }
+            50% {
+                box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15);
+            }
+        }
+
+        /* Learning explanation message styles - blue/purple educational theme */
+        .message.assistant.learning-explanation {
+            background: rgba(99, 102, 241, 0.15);
+            border: 1px solid rgba(99, 102, 241, 0.4);
+        }
+
+        /* Collapsed state for older learning explanations */
+        .message.assistant.learning-explanation.collapsed {
+            display: none;
+        }
+
+        /* Collapse/expand toggle button - inline with timestamp */
+        .explanation-toggle {
+            background: transparent;
+            border: none;
+            color: var(--vscode-foreground);
+            cursor: pointer;
+            padding: 0 4px;
+            font-size: 0.8em;
+            opacity: 0.6;
+            margin-left: 8px;
+        }
+
+        .explanation-toggle:hover {
+            opacity: 1;
+        }
+
+        /* Timestamp header with toggle for learning explanations */
+        .timestamp-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .timestamp-header .timestamp {
+            margin-bottom: 0;
+        }
+
+        /* Reference notebook card styles */
+        .reference-notebooks {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .reference-card {
+            background: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-widget-border);
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 0.9em;
+        }
+
+        .reference-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 6px;
+            gap: 8px;
+        }
+
+        .reference-card-title {
+            font-weight: 600;
+            color: var(--vscode-foreground);
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+            flex: 1;
+            min-width: 0;
+            word-break: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .reference-card-percentage {
+            font-size: 0.85em;
+            color: var(--vscode-descriptionForeground);
+            background: var(--vscode-badge-background);
+            padding: 2px 6px;
+            border-radius: 10px;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+
+        .reference-card-cells {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-top: 6px;
+        }
+
+        .reference-cell-preview {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 6px;
+            background: var(--vscode-textBlockQuote-background);
+            border-radius: 4px;
+            font-size: 0.85em;
+            cursor: pointer;
+        }
+
+        .reference-cell-preview:hover {
+            background: var(--vscode-list-hoverBackground);
+        }
+
+        .cell-type-badge {
+            font-size: 0.75em;
+            padding: 1px 4px;
+            border-radius: 3px;
+            background: var(--vscode-badge-background);
+            color: var(--vscode-badge-foreground);
+        }
+
+        .cell-preview-text {
+            color: var(--vscode-descriptionForeground);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+
+        .reference-card-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--vscode-widget-border);
+        }
+
+        .ref-action-btn {
+            padding: 4px 10px;
+            border-radius: 4px;
+            background: var(--vscode-button-secondaryBackground);
+            border: none;
+            color: var(--vscode-button-secondaryForeground);
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+
+        .ref-action-btn:hover {
+            background: var(--vscode-button-secondaryHoverBackground);
+        }
+
+        .ref-action-btn.primary {
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+        }
+
+        .ref-action-btn.primary:hover {
+            background: var(--vscode-button-hoverBackground);
+        }
+
+        /* Task card styles */
+        .task-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .task-card {
+            display: flex;
+            align-items: flex-start;
+            padding: 8px 10px;
+            border-radius: 6px;
+            background: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-widget-border);
+        }
+
+        .task-card.active {
+            border-color: var(--vscode-focusBorder);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .task-card.completed {
+            opacity: 0.7;
+        }
+
+        .task-card-content {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .task-status-icon {
+            font-size: 1em;
+            width: 20px;
+            flex-shrink: 0;
+            text-align: center;
+        }
+
+        .task-description {
+            flex: 1;
+            font-size: 0.9em;
+            color: var(--vscode-foreground);
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: break-word;
+            white-space: normal;
+        }
+
+        .task-card.reasoning .task-description {
+            font-style: italic;
+            color: var(--vscode-descriptionForeground);
+        }
+
+        /* Diff display styles */
+        .code-diff {
+            font-family: var(--vscode-editor-font-family), monospace;
+            font-size: var(--vscode-editor-font-size, 13px);
+            background: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-widget-border);
+            border-radius: 6px;
+            overflow: hidden;
+            margin: 8px 0;
+        }
+
+        .diff-header {
+            padding: 8px 12px;
+            background: var(--vscode-editorWidget-background);
+            border-bottom: 1px solid var(--vscode-widget-border);
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+
+        .diff-content {
+            padding: 8px 0;
+            overflow-x: auto;
+        }
+
+        .diff-line {
+            padding: 1px 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .diff-line.added {
+            background: rgba(35, 134, 54, 0.2);
+            color: var(--vscode-terminal-ansiGreen);
+        }
+
+        .diff-line.added::before {
+            content: '+ ';
+            color: var(--vscode-terminal-ansiGreen);
+        }
+
+        .diff-line.removed {
+            background: rgba(218, 54, 51, 0.2);
+            color: var(--vscode-terminal-ansiRed);
+        }
+
+        .diff-line.removed::before {
+            content: '- ';
+            color: var(--vscode-terminal-ansiRed);
+        }
+
+        .diff-line.unchanged {
+            color: var(--vscode-descriptionForeground);
+        }
+
+        .diff-line.unchanged::before {
+            content: '  ';
+        }
+
+        .diff-actions {
+            display: flex;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--vscode-editorWidget-background);
+            border-top: 1px solid var(--vscode-widget-border);
+        }
+
+        .diff-action-btn {
+            padding: 5px 12px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+
+        .diff-action-btn.accept {
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+        }
+
+        .diff-action-btn.accept:hover {
+            background: var(--vscode-button-hoverBackground);
+        }
+
+        .diff-action-btn.reject {
+            background: transparent;
+            border: 1px solid var(--vscode-widget-border);
+            color: var(--vscode-foreground);
+        }
+
+        .diff-action-btn.reject:hover {
+            background: var(--vscode-button-secondaryHoverBackground);
+        }
     </style>
 </head>
 <body>
     <div class="quick-actions">
-        <button class="quick-action" id="fix-btn">🔧</button>
-        <button class="quick-action" id="continue-btn">➡️</button>
-        <button class="quick-action" id="review-btn">💬</button>
+        <select id="notebook-selector" class="notebook-selector" title="Select notebook to work on">
+            <option value="">No notebook</option>
+        </select>
+        <button class="quick-action" id="fix-btn" title="Fix - switch to regular mode and send fix request">🔧</button>
         <button class="quick-action" id="rag-toggle">📚 RAG</button>
-        <button class="quick-action" id="autonomous-toggle">🤖 Auto</button>
+        <div class="mode-selector" id="mode-selector">
+            <button class="mode-btn active" data-mode="autonomous">Auto</button>
+            <button class="mode-btn" data-mode="guided">Tutorial</button>
+            <button class="mode-btn" data-mode="chat">Regular</button>
+        </div>
         <button class="quick-action" id="autofollow-toggle">👀</button>
     </div>
     
@@ -311,48 +788,341 @@
         <textarea id="chat-input" placeholder="Ask me anything..." rows="1"></textarea>
         <button id="send-btn">Send</button>
         <button id="feedback-btn" style="display: none;">Feedback</button>
-        <button id="action-btn">Clear</button>
+        <button id="action-btn" style="display: none;">Stop</button>
     </div>
     
     <script>
         const vscode = acquireVsCodeApi();
         let messages = [];
+        let currentInteractionMode = 'autonomous'; // Track current mode: 'autonomous', 'guided', or 'chat'
+        let explanationsExpanded = false; // By default, older explanations are collapsed
 
         // Markdown parser function
         function parseMarkdown(text) {
             let html = text;
-            
+
             // Escape HTML entities first
             html = html
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;');
-            
+
             // Headers (## Header)
             html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
             html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-            
+
             // Bold (**text**)
             html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-            
+
             // Italic (*text*)
             html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-            
+
+            // Cell references: "cell 5", "Cell 5", "cell #5", "Cell #5"
+            html = html.replace(/\b(cell\s*#?\s*)(\d+)\b/gi,
+                '<a href="#" class="cell-ref" data-cell="$2">$1$2</a>');
+
             // Bullet points (- item or • item)
             html = html.replace(/^[•-] (.+)$/gm, '<li>$1</li>');
-            
+
             // Wrap consecutive <li> elements in <ul>
             html = html.replace(/(<li>.*?<\/li>(?:\s*<li>.*?<\/li>)*)/gs, '<ul>$1</ul>');
-            
+
             // Numbered lists (1. item)
             html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-            
+
             // Convert line breaks to <br>
             html = html.replace(/\n/g, '<br>');
-            
+
             return html;
         }
-        
+
+        // Render reference notebook cards with collapsible cells
+        function renderReferenceNotebooks(notebooks) {
+            const container = document.createElement('div');
+            container.className = 'reference-notebooks';
+
+            const header = document.createElement('div');
+            header.textContent = 'Reference Workflows';
+            header.style.marginBottom = '8px';
+            container.appendChild(header);
+
+            notebooks.forEach(notebook => {
+                const card = document.createElement('div');
+                card.className = 'reference-card';
+
+                // Count total selected cells
+                const displayedCount = notebook.cells ? notebook.cells.length : 0;
+                const moreCount = notebook.more_cells_count || 0;
+                const totalCells = displayedCount + moreCount;
+
+                // Header with title and percentage (clickable to expand/collapse)
+                const cardHeader = document.createElement('div');
+                cardHeader.className = 'reference-card-header';
+                cardHeader.style.cursor = 'pointer';
+
+                const title = document.createElement('div');
+                title.className = 'reference-card-title';
+                const expandIcon = document.createElement('span');
+                expandIcon.className = 'expand-icon';
+                expandIcon.textContent = '▶';
+                expandIcon.style.cssText = 'font-size: 0.7em; margin-right: 4px; transition: transform 0.2s;';
+                title.appendChild(expandIcon);
+
+                // Make notebook name clickable to open (if source_path exists)
+                // Show full notebook ID (e.g., 'teichlab/Developing_heart.../notebook.ipynb')
+                const titleText = document.createElement('span');
+                titleText.textContent = ` ${notebook.id}`;
+                if (notebook.source_path) {
+                    titleText.style.cssText = 'color: var(--vscode-textLink-foreground); cursor: pointer;';
+                    titleText.onclick = (e) => {
+                        e.stopPropagation();
+                        vscode.postMessage({
+                            type: 'openReferenceNotebook',
+                            sourcePath: notebook.source_path,
+                            notebookId: notebook.id
+                        });
+                    };
+                }
+                title.appendChild(titleText);
+
+                const infoSpan = document.createElement('span');
+                infoSpan.className = 'reference-card-percentage';
+                infoSpan.textContent = `${totalCells} cells · ${Math.round(notebook.percentage)}%`;
+
+                cardHeader.appendChild(title);
+                cardHeader.appendChild(infoSpan);
+                card.appendChild(cardHeader);
+
+                // Collapsible content container (starts collapsed)
+                const collapsibleContent = document.createElement('div');
+                collapsibleContent.className = 'reference-card-collapsible';
+                collapsibleContent.style.cssText = 'display: none; margin-top: 6px;';
+
+                // Cell previews
+                if (notebook.cells && notebook.cells.length > 0) {
+                    const cellsContainer = document.createElement('div');
+                    cellsContainer.className = 'reference-card-cells';
+
+                    notebook.cells.forEach(cell => {
+                        const cellPreview = document.createElement('div');
+                        cellPreview.className = 'reference-cell-preview';
+                        cellPreview.onclick = (e) => {
+                            e.stopPropagation();
+                            vscode.postMessage({
+                                type: 'viewReferenceCell',
+                                notebookId: notebook.id,
+                                cellIndex: cell.index
+                            });
+                        };
+
+                        const badge = document.createElement('span');
+                        badge.className = 'cell-type-badge';
+                        badge.textContent = cell.type === 'code' ? '{ }' : 'Md';
+
+                        const previewText = document.createElement('span');
+                        previewText.className = 'cell-preview-text';
+                        previewText.textContent = `[${cell.index}] ${cell.preview || '(empty)'}`;
+
+                        cellPreview.appendChild(badge);
+                        cellPreview.appendChild(previewText);
+                        cellsContainer.appendChild(cellPreview);
+                    });
+
+                    // Show "+N more" indicator if cells were truncated (clickable to show all)
+                    if (notebook.more_cells_count > 0) {
+                        const moreIndicator = document.createElement('div');
+                        moreIndicator.className = 'more-cells-indicator';
+                        moreIndicator.style.cssText = 'font-size: 0.8em; color: var(--vscode-textLink-foreground); padding: 4px 6px; cursor: pointer;';
+                        moreIndicator.textContent = `+${notebook.more_cells_count} more cells selected`;
+                        moreIndicator.onclick = (e) => {
+                            e.stopPropagation();
+                            // Open the notebook to see all cells
+                            if (notebook.source_path) {
+                                vscode.postMessage({
+                                    type: 'openReferenceNotebook',
+                                    sourcePath: notebook.source_path,
+                                    notebookId: notebook.id
+                                });
+                            }
+                        };
+                        cellsContainer.appendChild(moreIndicator);
+                    }
+
+                    collapsibleContent.appendChild(cellsContainer);
+                }
+
+                // Note: Open Notebook action is now handled by clicking the notebook title
+
+                card.appendChild(collapsibleContent);
+
+                // Toggle expand/collapse on header click
+                cardHeader.onclick = () => {
+                    const isExpanded = collapsibleContent.style.display !== 'none';
+                    collapsibleContent.style.display = isExpanded ? 'none' : 'block';
+                    expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
+                };
+
+                container.appendChild(card);
+            });
+
+            return container;
+        }
+
+        // Simple line-by-line diff implementation
+        function computeDiff(originalText, newText) {
+            const originalLines = (originalText || '').split('\n');
+            const newLines = (newText || '').split('\n');
+            const result = [];
+
+            // Simple LCS-based diff (good enough for small code changes)
+            let i = 0, j = 0;
+            while (i < originalLines.length || j < newLines.length) {
+                if (i >= originalLines.length) {
+                    // Rest are additions
+                    result.push({ type: 'added', text: newLines[j] });
+                    j++;
+                } else if (j >= newLines.length) {
+                    // Rest are removals
+                    result.push({ type: 'removed', text: originalLines[i] });
+                    i++;
+                } else if (originalLines[i] === newLines[j]) {
+                    // Lines match
+                    result.push({ type: 'unchanged', text: originalLines[i] });
+                    i++;
+                    j++;
+                } else {
+                    // Look ahead to see if we can find a match
+                    let foundInNew = newLines.indexOf(originalLines[i], j);
+                    let foundInOrig = originalLines.indexOf(newLines[j], i);
+
+                    if (foundInNew !== -1 && (foundInOrig === -1 || foundInNew - j <= foundInOrig - i)) {
+                        // Original line exists later in new - additions before it
+                        while (j < foundInNew) {
+                            result.push({ type: 'added', text: newLines[j] });
+                            j++;
+                        }
+                    } else if (foundInOrig !== -1) {
+                        // New line exists later in original - removals before it
+                        while (i < foundInOrig) {
+                            result.push({ type: 'removed', text: originalLines[i] });
+                            i++;
+                        }
+                    } else {
+                        // No match found - treat as removal then addition
+                        result.push({ type: 'removed', text: originalLines[i] });
+                        result.push({ type: 'added', text: newLines[j] });
+                        i++;
+                        j++;
+                    }
+                }
+            }
+            return result;
+        }
+
+        // Render code diff with accept/reject actions
+        function renderCodeDiff(originalCode, newCode, message) {
+            const container = document.createElement('div');
+            container.className = 'code-diff';
+
+            // Header
+            const header = document.createElement('div');
+            header.className = 'diff-header';
+            const cellLabel = message.targetCellNumber !== undefined ? `Cell ${message.targetCellNumber} - ` : '';
+            header.textContent = `${cellLabel}Code Update`;
+            container.appendChild(header);
+
+            // Diff content
+            const content = document.createElement('div');
+            content.className = 'diff-content';
+
+            const diffLines = computeDiff(originalCode, newCode);
+            diffLines.forEach(line => {
+                const lineDiv = document.createElement('div');
+                lineDiv.className = `diff-line ${line.type}`;
+                lineDiv.textContent = line.text;
+                content.appendChild(lineDiv);
+            });
+
+            container.appendChild(content);
+
+            // Action buttons
+            const buttonsDisabled = message.buttonsUsed || false;
+            if (!buttonsDisabled) {
+                const actions = document.createElement('div');
+                actions.className = 'diff-actions';
+
+                const acceptBtn = document.createElement('button');
+                acceptBtn.className = 'diff-action-btn accept';
+                acceptBtn.textContent = '✓ Accept';
+                acceptBtn.onclick = () => {
+                    vscode.postMessage({
+                        type: 'replaceAndExecuteCode',
+                        code: newCode,
+                        cellNumber: message.targetCellNumber
+                    });
+                    vscode.postMessage({
+                        type: 'markButtonsUsed',
+                        messageIndex: message.messageIndex
+                    });
+                };
+                actions.appendChild(acceptBtn);
+
+                const rejectBtn = document.createElement('button');
+                rejectBtn.className = 'diff-action-btn reject';
+                rejectBtn.textContent = '✗ Reject';
+                rejectBtn.onclick = () => {
+                    vscode.postMessage({
+                        type: 'markButtonsUsed',
+                        messageIndex: message.messageIndex
+                    });
+                    // Just mark as used without applying changes
+                };
+                actions.appendChild(rejectBtn);
+
+                container.appendChild(actions);
+            }
+
+            return container;
+        }
+
+        // Render task list as interactive cards with action buttons
+        function renderTaskCards(tasks) {
+            const container = document.createElement('div');
+            container.className = 'task-cards';
+
+            tasks.forEach(task => {
+                const card = document.createElement('div');
+                card.className = `task-card ${task.status}`;
+                if (task.isReasoning) card.classList.add('reasoning');
+
+                // Content section with icon and description
+                const content = document.createElement('div');
+                content.className = 'task-card-content';
+
+                const icon = document.createElement('span');
+                icon.className = 'task-status-icon';
+                if (task.isReasoning) {
+                    icon.textContent = task.status === 'completed' ? '✅' :
+                                      task.status === 'active' ? '🧠' : '💭';
+                } else {
+                    icon.textContent = task.status === 'completed' ? '✅' :
+                                      task.status === 'active' ? '🏃' : '⏳';
+                }
+
+                const desc = document.createElement('span');
+                desc.className = 'task-description';
+                desc.textContent = `${task.id}. ${task.task}`;
+
+                content.appendChild(icon);
+                content.appendChild(desc);
+
+                card.appendChild(content);
+                container.appendChild(card);
+            });
+
+            return container;
+        }
+
         function processMessageForDisplay(message) {
             const parts = message.content.split(/(```[\s\S]*?```)/);
             const container = document.createElement('div');
@@ -360,127 +1130,140 @@
             
             for (let i = 0; i < parts.length; i++) {
                 if (isCodeBlock) {
+                    let code = parts[i].slice(3, -3).trim();
+
+                    // Check if we should render as diff (has original_code in metadata)
+                    if (message.metadata?.original_code !== undefined && message.metadata?.original_code !== null) {
+                        const diffContainer = renderCodeDiff(message.metadata.original_code, code, message);
+                        container.appendChild(diffContainer);
+                        isCodeBlock = !isCodeBlock;
+                        continue;
+                    }
+
                     // Create code block with buttons
                     const codeBlock = document.createElement('div');
                     codeBlock.className = 'code-block';
-                    
-                    let code = parts[i].slice(3, -3).trim();
-                    
+
                     const pre = document.createElement('pre');
                     pre.style.margin = '0';
                     pre.style.whiteSpace = 'pre-wrap';
                     pre.textContent = code;
                     codeBlock.appendChild(pre);
-                    
-                    // Create buttons container
-                    const buttonContainer = document.createElement('div');
-                    buttonContainer.style.position = 'absolute';
-                    buttonContainer.style.top = '4px';
-                    buttonContainer.style.right = '4px';
-                    buttonContainer.style.display = 'flex';
-                    buttonContainer.style.gap = '4px';
-                    
-                    // Determine if buttons should be disabled
-                    const buttonsDisabled = message.buttonsUsed || false;
-                    const disabledStyle = buttonsDisabled ? 
-                        'opacity: 0.5; cursor: not-allowed; background: var(--vscode-button-secondaryBackground);' : '';
-                    
-                    // Show cell number in button labels for clarity
-                    const cellNumberDisplay = message.targetCellNumber !== null && message.targetCellNumber !== undefined 
-                        ? ` (${message.targetCellNumber})` 
-                        : '';
-                    
-                    // Insert button
-                    const insertBtn = document.createElement('button');
-                    insertBtn.innerHTML = '+';
-                    insertBtn.style.cssText = disabledStyle;
-                    insertBtn.onclick = () => {
-                        if (!buttonsDisabled) {
-                            vscode.postMessage({
-                                type: 'insertCode',
-                                code: code,
-                                cellNumber: message.targetCellNumber
-                            });
-                            // Mark buttons as used
-                            vscode.postMessage({
-                                type: 'markButtonsUsed',
-                                messageIndex: message.messageIndex
-                            });
+
+                    // Only show action buttons in regular chat mode (not auto/tutorial)
+                    // In auto/tutorial mode, code is auto-inserted so buttons are redundant
+                    if (currentInteractionMode === 'chat') {
+                        // Create buttons container
+                        const buttonContainer = document.createElement('div');
+                        buttonContainer.style.position = 'absolute';
+                        buttonContainer.style.top = '4px';
+                        buttonContainer.style.right = '4px';
+                        buttonContainer.style.display = 'flex';
+                        buttonContainer.style.gap = '4px';
+
+                        // Determine if buttons should be disabled
+                        const buttonsDisabled = message.buttonsUsed || false;
+                        const disabledStyle = buttonsDisabled ?
+                            'opacity: 0.5; cursor: not-allowed; background: var(--vscode-button-secondaryBackground);' : '';
+
+                        // Show cell number in button labels for clarity
+                        const cellNumberDisplay = message.targetCellNumber !== null && message.targetCellNumber !== undefined
+                            ? ` (${message.targetCellNumber})`
+                            : '';
+
+                        // Insert button
+                        const insertBtn = document.createElement('button');
+                        insertBtn.innerHTML = '+';
+                        insertBtn.style.cssText = disabledStyle;
+                        insertBtn.onclick = () => {
+                            if (!buttonsDisabled) {
+                                vscode.postMessage({
+                                    type: 'insertCode',
+                                    code: code,
+                                    cellNumber: message.targetCellNumber
+                                });
+                                // Mark buttons as used
+                                vscode.postMessage({
+                                    type: 'markButtonsUsed',
+                                    messageIndex: message.messageIndex
+                                });
+                            }
+                        };
+
+                        // Replace button
+                        const replaceBtn = document.createElement('button');
+                        replaceBtn.innerHTML = '↻';
+                        replaceBtn.style.cssText = disabledStyle;
+                        replaceBtn.onclick = () => {
+                            if (!buttonsDisabled) {
+                                vscode.postMessage({
+                                    type: 'replaceCode',
+                                    code: code,
+                                    cellNumber: message.targetCellNumber
+                                });
+                                // Mark buttons as used
+                                vscode.postMessage({
+                                    type: 'markButtonsUsed',
+                                    messageIndex: message.messageIndex
+                                });
+                            }
+                        };
+
+                        // Insert and Execute button
+                        const insertExecuteBtn = document.createElement('button');
+                        insertExecuteBtn.innerHTML = '▶';
+                        insertExecuteBtn.style.cssText = disabledStyle;
+                        insertExecuteBtn.onclick = () => {
+                            if (!buttonsDisabled) {
+                                vscode.postMessage({
+                                    type: 'insertAndExecuteCode',
+                                    code: code,
+                                    cellNumber: message.targetCellNumber
+                                });
+                                // Mark buttons as used
+                                vscode.postMessage({
+                                    type: 'markButtonsUsed',
+                                    messageIndex: message.messageIndex
+                                });
+                            }
+                        };
+
+                        // Replace and Execute button
+                        const replaceExecuteBtn = document.createElement('button');
+                        replaceExecuteBtn.innerHTML = '▶';
+                        replaceExecuteBtn.style.cssText = disabledStyle;
+                        replaceExecuteBtn.onclick = () => {
+                            if (!buttonsDisabled) {
+                                vscode.postMessage({
+                                    type: 'replaceAndExecuteCode',
+                                    code: code,
+                                    cellNumber: message.targetCellNumber
+                                });
+                                // Mark buttons as used
+                                vscode.postMessage({
+                                    type: 'markButtonsUsed',
+                                    messageIndex: message.messageIndex
+                                });
+                            }
+                        };
+
+                        // Determine operation type from agent metadata (default to insert)
+                        const operationType = message.metadata?.operation_type || 'insert';
+                        const isReplacement = operationType === 'replace';
+
+                        if (isReplacement) {
+                            // Replacement context: show Replace + Replace&Execute
+                            buttonContainer.appendChild(replaceBtn);
+                            buttonContainer.appendChild(replaceExecuteBtn);
+                        } else {
+                            // Addition context: show Insert + Insert&Execute
+                            buttonContainer.appendChild(insertBtn);
+                            buttonContainer.appendChild(insertExecuteBtn);
                         }
-                    };
-                    
-                    // Replace button
-                    const replaceBtn = document.createElement('button');
-                    replaceBtn.innerHTML = '↻';
-                    replaceBtn.style.cssText = disabledStyle;
-                    replaceBtn.onclick = () => {
-                        if (!buttonsDisabled) {
-                            vscode.postMessage({
-                                type: 'replaceCode',
-                                code: code,
-                                cellNumber: message.targetCellNumber
-                            });
-                            // Mark buttons as used
-                            vscode.postMessage({
-                                type: 'markButtonsUsed',
-                                messageIndex: message.messageIndex
-                            });
-                        }
-                    };
-                    
-                    // Insert and Execute button
-                    const insertExecuteBtn = document.createElement('button');
-                    insertExecuteBtn.innerHTML = '▶';
-                    insertExecuteBtn.style.cssText = disabledStyle;
-                    insertExecuteBtn.onclick = () => {
-                        if (!buttonsDisabled) {
-                            vscode.postMessage({
-                                type: 'insertAndExecuteCode',
-                                code: code,
-                                cellNumber: message.targetCellNumber
-                            });
-                            // Mark buttons as used
-                            vscode.postMessage({
-                                type: 'markButtonsUsed',
-                                messageIndex: message.messageIndex
-                            });
-                        }
-                    };
-                    
-                    // Replace and Execute button
-                    const replaceExecuteBtn = document.createElement('button');
-                    replaceExecuteBtn.innerHTML = '▶';
-                    replaceExecuteBtn.style.cssText = disabledStyle;
-                    replaceExecuteBtn.onclick = () => {
-                        if (!buttonsDisabled) {
-                            vscode.postMessage({
-                                type: 'replaceAndExecuteCode',
-                                code: code,
-                                cellNumber: message.targetCellNumber
-                            });
-                            // Mark buttons as used
-                            vscode.postMessage({
-                                type: 'markButtonsUsed',
-                                messageIndex: message.messageIndex
-                            });
-                        }
-                    };
-                    
-                    // Determine operation type from agent metadata (default to insert)
-                    const operationType = message.metadata?.operation_type || 'insert';
-                    const isReplacement = operationType === 'replace';
-                    
-                    if (isReplacement) {
-                        // Replacement context: show Replace + Replace&Execute
-                        buttonContainer.appendChild(replaceBtn);
-                        buttonContainer.appendChild(replaceExecuteBtn);
-                    } else {
-                        // Addition context: show Insert + Insert&Execute  
-                        buttonContainer.appendChild(insertBtn);
-                        buttonContainer.appendChild(insertExecuteBtn);
+
+                        codeBlock.appendChild(buttonContainer);
                     }
-                    
-                    codeBlock.appendChild(buttonContainer);
+
                     container.appendChild(codeBlock);
                 } else {
                     // Regular text - parse markdown
@@ -540,10 +1323,67 @@
         }
         
         function updateMessages(newMessages) {
+            const oldMessages = messages;
             messages = newMessages;
             const messagesContainer = document.getElementById('messages');
+
+            // Find task list in old and new messages
+            const oldTaskIndex = oldMessages ? oldMessages.findIndex(m => m.metadata && m.metadata.isTaskList) : -1;
+            const newTaskIndex = newMessages.findIndex(m => m.metadata && m.metadata.isTaskList);
+
+            // Check if we can do an in-place task list update (same position, just content changed)
+            if (oldTaskIndex >= 0 && newTaskIndex >= 0 && oldTaskIndex === newTaskIndex) {
+                const taskListElement = messagesContainer.children[oldTaskIndex];
+                if (taskListElement && newMessages[newTaskIndex].metadata?.tasks) {
+                    // Update task cards in-place without full re-render
+                    const taskCardsContainer = taskListElement.querySelector('.task-cards');
+                    if (taskCardsContainer) {
+                        // Re-render just the task cards
+                        const newTaskCards = renderTaskCards(newMessages[newTaskIndex].metadata.tasks);
+                        taskCardsContainer.replaceWith(newTaskCards);
+
+                        // Check if only the task list changed (no new messages added/removed)
+                        // Also verify indicator state hasn't changed (indicator is always last if present)
+                        const oldHasIndicator = oldMessages.length > 0 && oldMessages[oldMessages.length - 1].isIndicator;
+                        const newHasIndicator = newMessages.length > 0 && newMessages[newMessages.length - 1].isIndicator;
+
+                        if (oldMessages.length === newMessages.length && oldHasIndicator === newHasIndicator) {
+                            // Update our local messages array and skip full rebuild
+                            messages = newMessages;
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // Check if task list content is unchanged (to preserve DOM element and prevent flicker)
+            let preserveTaskList = false;
+            let taskListElement = null;
+            if (oldTaskIndex >= 0 && newTaskIndex >= 0) {
+                const oldTasks = oldMessages[oldTaskIndex].metadata?.tasks;
+                const newTasks = newMessages[newTaskIndex].metadata?.tasks;
+                if (oldTasks && newTasks && JSON.stringify(oldTasks) === JSON.stringify(newTasks)) {
+                    // Task list unchanged - preserve the DOM element
+                    taskListElement = messagesContainer.children[oldTaskIndex];
+                    if (taskListElement) {
+                        preserveTaskList = true;
+                        taskListElement.remove(); // Temporarily remove, will re-insert at correct position
+                    }
+                }
+            }
+
+            // Clear and rebuild
             messagesContainer.innerHTML = '';
-            
+
+            // Find indices of all learning explanation messages
+            const explanationIndices = [];
+            messages.forEach((msg, idx) => {
+                if (msg.metadata && msg.metadata.isLearningExplanation) {
+                    explanationIndices.push(idx);
+                }
+            });
+            const lastExplanationIndex = explanationIndices.length > 0 ? explanationIndices[explanationIndices.length - 1] : -1;
+
             messages.forEach((message, index) => {
                 const messageDiv = document.createElement('div');
                 let className = `message ${message.role}`;
@@ -551,24 +1391,187 @@
                 if (message.isButtonAction) className += ' button-action';
                 if (message.metadata && message.metadata.isCritique) className += ' critique';
                 if (message.metadata && message.metadata.isAgentNotification) className += ' agent-notification';
+                if (message.metadata && message.metadata.isCheckpoint) className += ' checkpoint';
+                if (message.metadata && message.metadata.isLearningPause) className += ' learning-pause';
+                if (message.metadata && message.metadata.isLearningExplanation) {
+                    className += ' learning-explanation';
+                    // Collapse older explanations unless expanded
+                    if (!explanationsExpanded && index !== lastExplanationIndex) {
+                        className += ' collapsed';
+                    }
+                }
                 messageDiv.className = className;
 
-                // Add timestamp if available
-                if (message.timestamp) {
-                    const timestampDiv = document.createElement('div');
-                    timestampDiv.className = 'timestamp';
-                    timestampDiv.textContent = message.timestamp;
-                    messageDiv.appendChild(timestampDiv);
+                // Add timestamp if available (with toggle for learning explanations)
+                // Skip timestamp for checkpoint messages (continue button)
+                if (message.timestamp && !(message.metadata && message.metadata.isCheckpoint)) {
+                    const isLearningExplanation = message.metadata &&
+                        message.metadata.isLearningExplanation &&
+                        explanationIndices.length > 1;
+
+                    if (isLearningExplanation) {
+                        // Wrap timestamp and toggle in a header div for all explanation messages
+                        const headerDiv = document.createElement('div');
+                        headerDiv.className = 'timestamp-header';
+
+                        const timestampDiv = document.createElement('div');
+                        timestampDiv.className = 'timestamp';
+                        timestampDiv.textContent = message.timestamp;
+                        headerDiv.appendChild(timestampDiv);
+
+                        const toggleBtn = document.createElement('button');
+                        toggleBtn.className = 'explanation-toggle';
+                        toggleBtn.innerHTML = explanationsExpanded ? '▲' : '▼';
+                        toggleBtn.title = explanationsExpanded ? 'Collapse previous explanations' : 'Show all explanations';
+                        toggleBtn.onclick = () => {
+                            explanationsExpanded = !explanationsExpanded;
+                            updateMessages(messages); // Re-render
+                        };
+                        headerDiv.appendChild(toggleBtn);
+
+                        messageDiv.appendChild(headerDiv);
+                    } else {
+                        const timestampDiv = document.createElement('div');
+                        timestampDiv.className = 'timestamp';
+                        timestampDiv.textContent = message.timestamp;
+                        messageDiv.appendChild(timestampDiv);
+                    }
                 }
                 
                 // Add message index for button tracking
                 message.messageIndex = index;
-                
-                const processedContent = processMessageForDisplay(message);
-                messageDiv.appendChild(processedContent);
+
+                // Check for special message types that need custom rendering
+                if (message.metadata && message.metadata.type === 'reference_notebooks' && message.metadata.notebooks) {
+                    // Render reference notebook cards
+                    const notebooksContent = renderReferenceNotebooks(message.metadata.notebooks);
+                    messageDiv.appendChild(notebooksContent);
+                } else if (message.metadata && message.metadata.isCheckpoint) {
+                    // Render checkpoint as simple "Continue with next step" button
+                    const continueContent = document.createElement('div');
+                    continueContent.className = 'continue-bubble-content';
+
+                    const textSpan = document.createElement('span');
+                    textSpan.className = 'continue-bubble-text';
+                    textSpan.textContent = 'Continue with next step';
+                    continueContent.appendChild(textSpan);
+
+                    const playBtn = document.createElement('button');
+                    playBtn.className = 'continue-play-btn';
+                    playBtn.innerHTML = '▶';
+                    playBtn.title = 'Continue execution';
+                    playBtn.onclick = () => {
+                        // Send continue message - provider handles removal and UI update
+                        vscode.postMessage({ type: 'continueAutonomous' });
+                    };
+                    continueContent.appendChild(playBtn);
+
+                    messageDiv.appendChild(continueContent);
+                } else if (message.metadata && message.metadata.isTaskList && message.metadata.tasks) {
+                    // Render task list as interactive cards
+                    // If we preserved the task list element (unchanged), reuse it
+                    if (preserveTaskList && taskListElement && index === newTaskIndex) {
+                        messagesContainer.appendChild(taskListElement);
+                        return; // Skip creating new messageDiv (return acts as continue in forEach)
+                    }
+                    // First add reference notebooks if available (above the task list)
+                    if (message.metadata.referenceNotebooks && message.metadata.referenceNotebooks.length > 0) {
+                        const notebooksContent = renderReferenceNotebooks(message.metadata.referenceNotebooks);
+                        notebooksContent.style.marginBottom = '12px';
+                        messageDiv.appendChild(notebooksContent);
+                    }
+                    // Add chain-of-thought header
+                    const cotHeader = document.createElement('div');
+                    cotHeader.innerHTML = '<strong>Chain-of-thought:</strong>';
+                    cotHeader.style.marginBottom = '8px';
+                    messageDiv.appendChild(cotHeader);
+                    // Render task cards
+                    const taskCards = renderTaskCards(message.metadata.tasks);
+                    messageDiv.appendChild(taskCards);
+                } else if (message.metadata && message.metadata.isLearningExplanation && message.metadata.referenceNotebook) {
+                    // Learning explanation with clickable reference notebook link
+                    const refNotebook = message.metadata.referenceNotebook;
+                    const processedContent = processMessageForDisplay(message);
+
+                    // Find and replace the reference line with a clickable link
+                    // The text contains: *[adapted from: 'notebook_id', cells: [X,Y]]*
+                    const walker = document.createTreeWalker(processedContent, NodeFilter.SHOW_TEXT, null);
+                    let node;
+                    while (node = walker.nextNode()) {
+                        const text = node.textContent || '';
+                        const refPattern = /\[adapted from: '([^']+)', cells: \[([^\]]+)\]\]/;
+                        const match = text.match(refPattern);
+                        if (match && refNotebook.sourcePath) {
+                            // Create clickable link
+                            const beforeText = text.substring(0, match.index);
+                            const afterText = text.substring((match.index || 0) + match[0].length);
+
+                            const fragment = document.createDocumentFragment();
+                            if (beforeText) fragment.appendChild(document.createTextNode(beforeText));
+
+                            const link = document.createElement('span');
+                            link.textContent = match[0];
+                            link.style.cssText = 'color: var(--vscode-textLink-foreground); cursor: pointer; text-decoration: underline;';
+                            link.title = 'Click to open reference notebook';
+                            link.onclick = (e) => {
+                                e.stopPropagation();
+                                vscode.postMessage({
+                                    type: 'openReferenceNotebook',
+                                    sourcePath: refNotebook.sourcePath,
+                                    notebookId: refNotebook.notebookId
+                                });
+                            };
+                            fragment.appendChild(link);
+
+                            if (afterText) fragment.appendChild(document.createTextNode(afterText));
+
+                            node.parentNode.replaceChild(fragment, node);
+                            break; // Only replace first occurrence
+                        }
+                    }
+
+                    messageDiv.appendChild(processedContent);
+                } else if (message.isIndicator) {
+                    // Render activity indicator with spinner
+                    const indicatorDiv = document.createElement('div');
+                    indicatorDiv.className = 'activity-indicator';
+                    indicatorDiv.id = 'activity-indicator';
+
+                    const spinner = document.createElement('div');
+                    spinner.className = 'spinner';
+                    indicatorDiv.appendChild(spinner);
+
+                    const textSpan = document.createElement('span');
+                    textSpan.className = 'indicator-text';
+                    textSpan.textContent = message.indicatorText || 'thinking';
+                    indicatorDiv.appendChild(textSpan);
+
+                    messageDiv.appendChild(indicatorDiv);
+                } else {
+                    // Normal message processing
+                    const processedContent = processMessageForDisplay(message);
+                    messageDiv.appendChild(processedContent);
+                }
+
+                // Add suggestion pills if present (only for last assistant message)
+                if (message.role === 'assistant' && message.suggestions && message.suggestions.length > 0 && index === messages.length - 1) {
+                    const suggestionsDiv = document.createElement('div');
+                    suggestionsDiv.className = 'intent-suggestions';
+                    message.suggestions.forEach(suggestion => {
+                        const btn = document.createElement('button');
+                        btn.className = 'suggestion-pill';
+                        btn.innerHTML = `${suggestion.icon || '💡'} ${suggestion.label}`;
+                        btn.onclick = () => {
+                            vscode.postMessage({ type: 'chat', message: suggestion.action });
+                        };
+                        suggestionsDiv.appendChild(btn);
+                    });
+                    messageDiv.appendChild(suggestionsDiv);
+                }
+
                 messagesContainer.appendChild(messageDiv);
             });
-            
+
             // Scroll to bottom
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
@@ -580,6 +1583,31 @@
             switch (message.type) {
                 case 'updateMessages':
                     updateMessages(message.messages);
+                    break;
+                case 'updateIndicator':
+                    // Update activity indicator text without full re-render
+                    const indicatorText = document.querySelector('#activity-indicator .indicator-text');
+                    if (indicatorText && message.text) {
+                        indicatorText.textContent = message.text;
+                    }
+                    break;
+                case 'updateTaskCards':
+                    // Update task cards in-place without full re-render (prevents flicker)
+                    const messagesContainer = document.getElementById('messages');
+                    if (messagesContainer && message.taskIndex >= 0 && message.tasks) {
+                        const taskListElement = messagesContainer.children[message.taskIndex];
+                        if (taskListElement) {
+                            const taskCardsContainer = taskListElement.querySelector('.task-cards');
+                            if (taskCardsContainer) {
+                                const newTaskCards = renderTaskCards(message.tasks);
+                                taskCardsContainer.replaceWith(newTaskCards);
+                                // Also update our local messages array
+                                if (messages[message.taskIndex] && messages[message.taskIndex].metadata) {
+                                    messages[message.taskIndex].metadata.tasks = message.tasks;
+                                }
+                            }
+                        }
+                    }
                     break;
                 case 'updateRagToggle':
                     const ragToggle = document.getElementById('rag-toggle');
@@ -593,17 +1621,16 @@
                         }
                     }
                     break;
-                case 'updateAutonomousToggle':
-                    const autonomousToggle = document.getElementById('autonomous-toggle');
-                    if (autonomousToggle) {
-                        if (message.enabled) {
-                            autonomousToggle.style.opacity = '1';
-                            autonomousToggle.style.fontWeight = 'bold';
+                case 'updateModeIndicator':
+                    // Update mode selector to show active mode
+                    const modeButtons = document.querySelectorAll('.mode-btn');
+                    modeButtons.forEach(btn => {
+                        if (btn.dataset.mode === message.mode) {
+                            btn.classList.add('active');
                         } else {
-                            autonomousToggle.style.opacity = '0.5';
-                            autonomousToggle.style.fontWeight = 'normal';
+                            btn.classList.remove('active');
                         }
-                    }
+                    });
                     break;
                 case 'updateAutoFollowToggle':
                     const autoFollowToggle = document.getElementById('autofollow-toggle');
@@ -621,34 +1648,74 @@
                         }
                     }
                     break;
+                case 'updateNotebookList':
+                    // Update notebook selector dropdown with list of open notebooks
+                    const notebookSelector = document.getElementById('notebook-selector');
+                    if (notebookSelector) {
+                        const currentValue = notebookSelector.value;
+                        notebookSelector.innerHTML = '';
+
+                        // Add "No notebook" option
+                        const noNotebookOption = document.createElement('option');
+                        noNotebookOption.value = '';
+                        noNotebookOption.textContent = 'No notebook';
+                        notebookSelector.appendChild(noNotebookOption);
+
+                        // Add each open notebook
+                        if (message.notebooks && message.notebooks.length > 0) {
+                            message.notebooks.forEach(nb => {
+                                const option = document.createElement('option');
+                                option.value = nb.uri;
+                                option.textContent = nb.name;
+                                option.title = nb.path; // Full path as tooltip
+                                notebookSelector.appendChild(option);
+                            });
+                        }
+
+                        // Set selected value (either from message or preserve current)
+                        if (message.selectedUri !== undefined) {
+                            notebookSelector.value = message.selectedUri || '';
+                        } else if (currentValue) {
+                            notebookSelector.value = currentValue;
+                        }
+                    }
+                    break;
+                case 'updateLearningModeToggle':
+                    // Learning mode toggle button removed - learning mode is now controlled via Tutorial mode
+                    break;
                 case 'updateAutoModeButton':
                     const feedbackBtnAutoMode = document.getElementById('feedback-btn');
                     const sendBtnAutoMode = document.getElementById('send-btn');
                     const actionBtnAutoMode = document.getElementById('action-btn');
 
+                    // When waiting for feedback in tutorial mode, show Send (not Feedback)
+                    // so user can type questions or just hit Enter to continue
+                    const showSendButton = !message.isAutonomousRunning || message.isWaitingForFeedback;
+
                     if (feedbackBtnAutoMode && sendBtnAutoMode) {
-                        if (message.isAutonomousRunning) {
-                            // In autonomous mode: show feedback button, hide send button
-                            feedbackBtnAutoMode.style.display = 'inline-block';
-                            sendBtnAutoMode.style.display = 'none';
-                        } else {
-                            // In regular mode: hide feedback button, show send button
+                        if (showSendButton) {
+                            // Show Send button for regular mode OR when waiting for feedback
                             feedbackBtnAutoMode.style.display = 'none';
                             sendBtnAutoMode.style.display = 'inline-block';
+                        } else {
+                            // Running autonomous - show Feedback button
+                            feedbackBtnAutoMode.style.display = 'inline-block';
+                            sendBtnAutoMode.style.display = 'none';
                         }
                     }
 
+                    // Continue button is now rendered inline as a bubble, not in top menu
+
                     if (actionBtnAutoMode) {
-                        if (message.isAutonomousRunning) {
-                            // In autonomous mode: action button becomes Stop
+                        if (message.isAutonomousRunning && !message.isWaitingForFeedback) {
+                            // Actively running autonomous mode: show Stop button
                             actionBtnAutoMode.textContent = 'Stop';
+                            actionBtnAutoMode.style.display = 'inline-block';
                             actionBtnAutoMode.style.backgroundColor = '#d73a49';
                             actionBtnAutoMode.style.color = 'white';
                         } else {
-                            // In regular mode: action button becomes Clear
-                            actionBtnAutoMode.textContent = 'Clear';
-                            actionBtnAutoMode.style.backgroundColor = 'var(--vscode-button-background)';
-                            actionBtnAutoMode.style.color = 'var(--vscode-button-foreground)';
+                            // Not actively running: hide button (Clear removed)
+                            actionBtnAutoMode.style.display = 'none';
                         }
                     }
                     break;
@@ -692,7 +1759,7 @@
         });
         
         document.getElementById('send-btn').addEventListener('click', sendMessage);
-        
+
         document.getElementById('action-btn').addEventListener('click', function() {
             const actionBtn = document.getElementById('action-btn');
             if (actionBtn.textContent === 'Stop') {
@@ -711,25 +1778,51 @@
             vscode.postMessage({ type: 'toggleRag' });
         });
 
-        document.getElementById('autonomous-toggle').addEventListener('click', function() {
-            vscode.postMessage({ type: 'toggleAutonomous' });
+        // Mode selector buttons
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const mode = this.dataset.mode;
+                currentInteractionMode = mode; // Track mode locally
+                // Update UI immediately for responsiveness
+                document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                // Notify extension of mode change
+                vscode.postMessage({ type: 'setMode', mode: mode });
+            });
         });
-        
+
         document.getElementById('autofollow-toggle').addEventListener('click', function() {
             vscode.postMessage({ type: 'toggleAutoFollow' });
         });
+
+        // Notebook selector change handler
+        document.getElementById('notebook-selector').addEventListener('change', function() {
+            const selectedUri = this.value;
+            vscode.postMessage({ type: 'selectNotebook', notebookUri: selectedUri });
+        });
+
+        // Cell reference click handler
+        document.getElementById('messages').addEventListener('click', function(e) {
+            if (e.target.classList.contains('cell-ref')) {
+                e.preventDefault();
+                const cellIndex = parseInt(e.target.dataset.cell);
+                vscode.postMessage({ type: 'jumpToCell', cellIndex: cellIndex });
+            }
+        });
         
-        // Quick action buttons - send standardized messages
+        // Fix button - switch to regular mode and send fix request
         document.getElementById('fix-btn').addEventListener('click', function() {
+            // Switch to regular mode if not already
+            if (currentInteractionMode !== 'chat') {
+                currentInteractionMode = 'chat';
+                // Update mode selector UI
+                document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                document.querySelector('.mode-btn[data-mode="chat"]').classList.add('active');
+                // Notify extension of mode change
+                vscode.postMessage({ type: 'setMode', mode: 'chat' });
+            }
+            // Send fix message
             sendQuickMessage('Fix the code in this cell');
-        });
-        
-        document.getElementById('continue-btn').addEventListener('click', function() {
-            sendQuickMessage('Build a next cell that continues this analysis');
-        });
-        
-        document.getElementById('review-btn').addEventListener('click', function() {
-            sendQuickMessage('Explain this code in the context of the notebook');
         });
         
         function sendQuickMessage(message) {

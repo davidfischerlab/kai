@@ -141,11 +141,11 @@ class AutonomousUpdateTasksTool(StructuredPromptTool):
             "task_list_update_rule": structured_result.update_rule,
             "task_list_update_rationale": structured_result.update_rationale,
             "tasks_updated": True,  # For deterministic router phase tracking
-            # CRITICAL: Clear critique state to prevent infinite loop when regenerating
-            # after critique failure. Without this, the router sees old approval="MODIFY"
+            # CRITICAL: Clear evaluation state to prevent infinite loop when regenerating
+            # after evaluation failure. Without this, the router sees old grade="REJECTED"
             # and keeps routing back to autonomous_update_tasks indefinitely.
-            "autonomous_update_approval": None,
-            "autonomous_update_critique": None,
+            "task_update_grade": None,
+            "task_update_feedback": None,
         }
 
         # Extract optional rag queries

@@ -22,11 +22,14 @@ from .notebook_operations import NotebookOperationsTool
 
 # Task tools
 from .task_list_generation import TaskListGenerationTool, TaskListGeneration
-from .task_list_critique import TaskListCritiqueTool, TaskListCritique
 from .autonomous_mark_completion import AutonomousMarkCompletionTool, AutonomousMarkCompletion
 from .autonomous_update_tasks import AutonomousUpdateTasksTool, AutonomousTaskUpdate
-from .autonomous_update_critique import AutonomousUpdateCritiqueTool, AutonomousUpdateCritique
 from .mark_next_task_active import MarkNextTaskActiveTool
+
+# Evaluator tools (evaluator-optimizer pattern)
+from .task_list_evaluator import TaskListEvaluatorTool, TaskListEvaluation
+from .task_update_evaluator import TaskUpdateEvaluatorTool, TaskUpdateEvaluation
+from .reasoning_evaluator import ReasoningEvaluatorTool, ReasoningEvaluation
 
 # Code tools
 from .code_update import CodeUpdateTool
@@ -43,11 +46,11 @@ from .execution_monitor import ExecutionMonitorTool, ExecutionMonitor
 from .intent_classification import IntentClassificationTool, IntentClassification
 from .autoloop_intent_classification import AutoLoopIntentClassificationTool, AutoLoopIntentClassification
 from .question_answering import QuestionAnsweringTool
+from .learning_explanation import LearningExplanationTool
 from .section_code_review import SectionCodeReviewTool, SectionCodeReview
 
 # Reasoning tools
 from .reasoning_response_with_guidance import ReasoningResponseWithGuidanceTool
-from .reasoning_critique import ReasoningCritiqueTool, ReasoningCritique
 
 # Reference workflow tools
 from .reference_workflow_selection import (
@@ -106,6 +109,7 @@ def create_consolidated_tools(
         "classify_intent": IntentClassificationTool(llm),
         "classify_intent_autonomous": AutoLoopIntentClassificationTool(llm),
         "answer_question": QuestionAnsweringTool(llm),
+        "learning_explanation": LearningExplanationTool(llm),
         "review_code": SectionCodeReviewTool(llm),
 
         "notebook_operations": NotebookOperationsTool(),
@@ -114,9 +118,12 @@ def create_consolidated_tools(
         "mark_next_task_active": MarkNextTaskActiveTool(),
         "autonomous_mark_completion": AutonomousMarkCompletionTool(llm),
         "autonomous_update_tasks": AutonomousUpdateTasksTool(llm),
-        "autonomous_update_critique": AutonomousUpdateCritiqueTool(llm),
         "task_list_generation": TaskListGenerationTool(llm),
-        "task_list_critique": TaskListCritiqueTool(llm),
+
+        # Evaluator tools (evaluator-optimizer pattern)
+        "task_list_evaluator": TaskListEvaluatorTool(llm),
+        "task_update_evaluator": TaskUpdateEvaluatorTool(llm),
+        "reasoning_evaluator": ReasoningEvaluatorTool(llm),
 
         # Code generation tools
         "cell_positioning": CellPositioningTool(llm),
@@ -126,7 +133,6 @@ def create_consolidated_tools(
 
         # Reasoning tools
         "reasoning_response_with_guidance": ReasoningResponseWithGuidanceTool(llm),
-        "reasoning_critique": ReasoningCritiqueTool(llm),
 
         # Error recovery tools
         "error_recovery": ErrorRecoveryTool(llm),

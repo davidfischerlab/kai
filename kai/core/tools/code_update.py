@@ -77,12 +77,21 @@ class CodeUpdateTool(UnstructuredPromptTool):
 
         # Create VSCode-ready response - only include fields VSCode uses
         if autonomous_mode:
+            # Get original cell content for diff display
+            target_cell_index = positioning_info.get("target_cell_index", positioning_info.get("target_cell"))
+            original_code = None
+            if target_cell_index is not None:
+                notebook_cells = state.get("notebook_cells", [])
+                if 0 <= target_cell_index < len(notebook_cells):
+                    original_code = notebook_cells[target_cell_index].get("content", "")
+
             vscode_response = {
                 "code": extracted_code,
                 "should_replace": True,
                 "error_recovery_strategy": error_recovery_strategy,
                 "positioning_info": positioning_info,
-                "cell_type": "code"
+                "cell_type": "code",
+                "original_code": original_code,  # For diff display in UI
             }
             output_type = ToolOutputType.EXECUTE_ONLY
 

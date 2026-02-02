@@ -55,36 +55,48 @@ def route_first_execution(
         logger.debug("[DET ROUTER] FIRST_EXEC: need positioning → cell_positioning")
         return "cell_positioning"
 
-    # Check if this is a reasoning task (set by mark_next_task_active)
+    # Check if this is a reasoning task
+    # Note: The flag may have been set by mark_next_task_active during planning,
+    # but could be lost when execution starts as a new request. Recalculate from
+    # the active task objective to be safe.
     is_reasoning = safe_get(state, "is_reasoning_task", False)
+    if not is_reasoning and active_task_objective:
+        # Recalculate from task description (like standard_retry does)
+        is_reasoning = "[reasoning]" in active_task_objective.lower()
+        if is_reasoning:
+            logger.debug("[DET ROUTER] FIRST_EXEC: detected reasoning task from objective")
+
     generated_code = safe_get(state, "generated_code")
     reasoning_response = safe_get(state, "reasoning_response")
 
     if is_reasoning:
-        # Reasoning critique loop
-        # Flow: generate → critique → (if MODIFY) regenerate → critique → ...
-        reasoning_approval = safe_get(state, "reasoning_approval")
-        critique_iteration = safe_get(state, "reasoning_critique_iteration", 0)
+        # Reasoning evaluation loop
+        # Flow: generate → evaluator → (if REJECTED) regenerate → evaluator → ...
+        reasoning_grade = safe_get(state, "reasoning_grade")
+        evaluation_iteration = safe_get(state, "reasoning_evaluation_iteration", 0)
 
         # Check max iterations FIRST (before regenerating)
-        if critique_iteration >= 2:
+        if evaluation_iteration >= 2:
             # Max iterations reached - stop without regenerating
-            if reasoning_approval == "APPROVED":
+            if reasoning_grade == "APPROVED":
                 logger.info(
-                    f"[REASONING] ✅ Approved after {critique_iteration} critique iterations"
+                    f"[REASONING] Approved after {evaluation_iteration} "
+                    f"evaluation iterations"
                 )
                 if send_message:
                     send_message(
-                        f"✅ Reasoning approved after {critique_iteration} critique iterations"
+                        f"Reasoning approved after {evaluation_iteration} "
+                        f"evaluation iterations"
                     )
             else:
                 logger.info(
-                    f"[REASONING] ⚠️ Auto-accepting after max iterations ({critique_iteration}) - "
-                    f"critique did not approve"
+                    f"[REASONING] Auto-accepting after max iterations "
+                    f"({evaluation_iteration}) - evaluator did not approve"
                 )
                 if send_message:
                     send_message(
-                        f"⚠️ Auto-accepting reasoning after max critique iterations ({critique_iteration}) reached"
+                        f"Auto-accepting reasoning after max evaluation iterations "
+                        f"({evaluation_iteration}) reached"
                     )
             logger.debug(
                 "[DET ROUTER] FIRST_EXEC: reasoning complete "
@@ -92,22 +104,26 @@ def route_first_execution(
             )
             return "mark_reasoning_completed"
 
-        # Generate reasoning if not exists OR if critique rejected
-        if not reasoning_response or reasoning_approval == "MODIFY":
-            logger.debug("[DET ROUTER] FIRST_EXEC: reasoning task, generating reasoning")
+        # Generate reasoning if not exists OR if evaluator rejected
+        if not reasoning_response or reasoning_grade == "REJECTED":
+            logger.debug(
+                "[DET ROUTER] FIRST_EXEC: reasoning task, generating reasoning"
+            )
             return "reasoning_response_with_guidance"
 
-        # Run critique if reasoning exists but not yet critiqued (approval is None)
-        if reasoning_approval is None:
+        # Run evaluator if reasoning exists but not yet evaluated (grade is None)
+        if reasoning_grade is None:
             logger.debug(
-                f"[DET ROUTER] FIRST_EXEC: reasoning critique (iter {critique_iteration + 1})"
+                f"[DET ROUTER] FIRST_EXEC: reasoning evaluator "
+                f"(iter {evaluation_iteration + 1})"
             )
-            return "reasoning_critique"
+            return "reasoning_evaluator"
 
         # Approved - mark complete
         if send_message:
             send_message(
-                f"Reasoning approved after {critique_iteration} critique iterations"
+                f"Reasoning approved after {evaluation_iteration} evaluation "
+                f"iterations"
             )
         logger.debug(
             "[DET ROUTER] FIRST_EXEC: reasoning complete → mark_reasoning_completed"

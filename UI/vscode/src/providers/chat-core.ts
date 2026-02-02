@@ -3,289 +3,496 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
+ * Message types for categorizing chat messages.
+ * - user/assistant: Regular conversation messages
+ * - task_list: Chain-of-thought display (singleton)
+ * - agent_notif: Analyst agent notification (singleton)
+ * - critique: Reviewer agent feedback (singleton)
+ * - learning: Learning explanations (accumulating)
+ * - checkpoint: Continue button (singleton)
+ * - indicator: Activity spinner (singleton, always last)
+ */
+type MessageType = 'user' | 'assistant' | 'task_list' | 'agent_notif' | 'critique' | 'learning' | 'checkpoint' | 'indicator';
+
+/**
+ * Structured chat message with explicit type and ID.
+ */
+interface ChatMessage {
+    id: string;
+    type: MessageType;
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: string;
+    metadata?: Record<string, any>;
+    isButtonAction?: boolean;
+    buttonsUsed?: boolean;
+    suggestions?: Array<{icon: string; label: string; action: string}>;
+    intent?: string;
+    toolUsage?: Array<{name: string; query?: string; status: string; collections?: string[]}>;
+    // Legacy compatibility fields
+    isIndicator?: boolean;
+    indicatorText?: string;
+}
+
+/**
  * ChatCore - Core chat message management and LLM context preparation
- * 
- * Primary Responsibilities:
- * - Message storage and conversation history management
- * - Context preparation for LLM interactions (notebook, execution, modification data)
- * - Task list formatting and display message handling
- * - Execution history token-based trimming for LLM efficiency
- * - UI state coordination (streaming, toggles)
- * 
- * Key Features:
- * - Manages conversation flow and message chronology
- * - Formats complex data structures for LLM consumption
- * - Provides smart context trimming based on token limits
- * - Handles autonomous mode state checking for UI updates
- * 
- * Architecture Position:
- * - Core component for all chat-related data processing
- * - Delegates storage to NotebookOperations, focuses on formatting
- * - Provides clean interface between raw data and LLM requirements
+ *
+ * Architecture:
+ * - Separate storage for different message types (conversation, singletons, accumulating)
+ * - Computed `messages` getter assembles display order with guaranteed indicator-last ordering
+ * - Type-routed message handling eliminates fragile index tracking
+ *
+ * Display Order (guaranteed):
+ * 1. Conversation messages (user/assistant exchanges)
+ * 2. Task list (if exists)
+ * 3. Agent notification (if exists)
+ * 4. Critique (if exists)
+ * 5. Learning messages (if any)
+ * 6. Checkpoint (if exists)
+ * 7. Indicator (if visible) - ALWAYS LAST
  */
 export class ChatCore {
-    private _messages: Array<{role: string, content: string, timestamp: string, isIndicator?: boolean, isButtonAction?: boolean, intent?: string, toolUsage?: Array<{name: string, query?: string, status: string, collections?: string[]}>, buttonsDisabled?: boolean, buttonsUsed?: boolean, metadata?: any }> = [];
-    private taskMessageIndex: number = -1;
-    private critiqueMessageIndex: number = -1;
-    private agentNotificationMessageIndex: number = -1;
-    
-    // Context preparation limits for LLM efficiency
-    private readonly MAX_CONTEXT_TOKENS = 8000; // Token limit for both execution and modification history in LLM context
-    
-    // Mode toggles  
+    // ========== MESSAGE STORAGE ==========
+
+    // Conversation messages (user/assistant exchanges)
+    private _conversation: ChatMessage[] = [];
+
+    // Singleton messages (only one of each can exist)
+    private _taskList: ChatMessage | null = null;
+    private _agentNotification: ChatMessage | null = null;
+    private _critique: ChatMessage | null = null;
+    private _checkpoint: ChatMessage | null = null;
+
+    // Accumulating messages
+    private _learningMessages: ChatMessage[] = [];
+
+    // Indicator state (not stored as message, just state)
+    private _indicator: { visible: boolean; text: string } = { visible: false, text: '' };
+
+    // ========== CONFIGURATION ==========
+
+    private readonly MAX_CONTEXT_TOKENS = 8000;
+
+    // Mode toggles
     private _ragEnabled: boolean = true;
     private _turboEnabled: boolean = true;
-    
+    private _interactionMode: 'chat' | 'guided' | 'autonomous' = 'autonomous';
+    private _learningMode: boolean = false;
+
+    // Task completion tracking for guided mode checkpoints
+    private _lastTaskStates: Record<string, string> = {};
+    private _taskJustCompleted: boolean = false;
+
     // Reference to notebook operations (set after construction)
     private notebookOps: any;
 
-    // Reference workflow IDs storage (for current autonomous session)
+    // Reference workflow storage
     private _storedReferenceWorkflows: string | null = null;
-    private _storedCritique: string | null = null;
-    private _storedAgentNotification: string | null = null;
-    
+    private _storedReferenceNotebooks: Array<{
+        id: string;
+        title: string;
+        source_path: string;
+        percentage: number;
+        cells: Array<{index: number; type: string; preview: string}>;
+    }> | null = null;
+
+    // Callback for sending targeted messages to webview
+    private _sendToWebview: ((msg: any) => void) | null = null;
+
     constructor(
         private updateWebview: () => void,
-        private _storeToolUsage: (tool: {name: string, query?: string, status: string, collections?: string[]}) => void, // Used in constructor binding
+        private _storeToolUsage: (tool: {name: string, query?: string, status: string, collections?: string[]}) => void,
         private getAutonomousExecutionStatus?: () => boolean
     ) {}
 
+    // ========== COMPUTED MESSAGES GETTER ==========
+
     /**
-     * Sets the NotebookOperations instance for accessing notebook history data.
-     * Must be called after construction due to circular dependency resolution.
-     * 
-     * @param notebookOps - NotebookOperations instance for execution/modification history
-     * @interaction Called by ChatViewProvider during initialization
+     * Returns all messages in guaranteed display order.
+     * Indicator is ALWAYS last when visible.
      */
+    get messages(): ChatMessage[] {
+        const result: ChatMessage[] = [...this._conversation];
+
+        if (this._taskList) result.push(this._taskList);
+        if (this._agentNotification) result.push(this._agentNotification);
+        if (this._critique) result.push(this._critique);
+        result.push(...this._learningMessages);
+        if (this._checkpoint) result.push(this._checkpoint);
+
+        // Indicator ALWAYS last
+        if (this._indicator.visible) {
+            result.push({
+                id: 'indicator',
+                type: 'indicator',
+                role: 'assistant',
+                content: '',
+                timestamp: '',
+                metadata: { isIndicator: true, indicatorText: this._indicator.text },
+                isIndicator: true,
+                indicatorText: this._indicator.text
+            });
+        }
+
+        return result;
+    }
+
+    // ========== PROPERTY GETTERS/SETTERS ==========
+
+    get ragEnabled() { return this._ragEnabled; }
+    set ragEnabled(value: boolean) { this._ragEnabled = value; }
+
+    get turboEnabled() { return this._turboEnabled; }
+    set turboEnabled(value: boolean) { this._turboEnabled = value; }
+
+    get interactionMode() { return this._interactionMode; }
+    set interactionMode(value: 'chat' | 'guided' | 'autonomous') { this._interactionMode = value; }
+
+    get learningMode() { return this._learningMode; }
+    set learningMode(value: boolean) { this._learningMode = value; }
+
+    get taskJustCompleted() { return this._taskJustCompleted; }
+    set taskJustCompleted(value: boolean) { this._taskJustCompleted = value; }
+
+    get storedReferenceNotebooks() { return this._storedReferenceNotebooks; }
+
+    // ========== INITIALIZATION ==========
+
     setNotebookOperations(notebookOps: any) {
         this.notebookOps = notebookOps;
     }
 
-    /**
-     * Gets the complete conversation history including all messages.
-     * 
-     * @returns Array of all messages with metadata
-     * @interaction Read by ChatViewProvider for webview updates
-     */
-    get messages() { return this._messages; }
-    
-    /**
-     * Gets the current RAG (Retrieval Augmented Generation) enabled state.
-     * @returns Boolean indicating if RAG is enabled
-     * @interaction Used by agent context preparation
-     */
-    get ragEnabled() { return this._ragEnabled; }
-    /**
-     * Sets the RAG enabled state.
-     * @param value - New RAG enabled state
-     * @interaction Modified by UI toggles in ChatViewProvider
-     */
-    set ragEnabled(value: boolean) { this._ragEnabled = value; }
-    
-    /**
-     * Gets the current Turbo mode (faster LLM) enabled state.
-     * @returns Boolean indicating if Turbo mode is enabled
-     * @interaction Used by agent to switch between LLM models
-     */
-    get turboEnabled() { return this._turboEnabled; }
-    /**
-     * Sets the Turbo mode enabled state.
-     * @param value - New Turbo mode state
-     * @interaction Modified by UI toggles and autonomous mode
-     */
-    set turboEnabled(value: boolean) { this._turboEnabled = value; }
+    public setSendToWebview(callback: (msg: any) => void): void {
+        this._sendToWebview = callback;
+    }
 
-    // MESSAGE HISTORY 
+    // ========== MESSAGE MANAGEMENT ==========
 
     /**
-     * Adds a new message to the conversation history and triggers UI update.
-     * Handles different message types including thinking indicators and button actions.
-     * 
-     * @param role - Message role ('user' or 'assistant')
-     * @param content - Message content text
-     * @param isThinking - Whether this is a temporary thinking indicator
-     * @param isButtonAction - Whether this message is from a button click
-     * @param metadata - Additional message metadata (e.g., task list flag)
-     * @interaction Called by ChatViewProvider, AutonomousExecution, and agent responses
+     * Adds a message, routing to appropriate storage based on type.
+     * This maintains backwards compatibility with existing callers.
      */
-    public addMessage(role: string, content: string, isThinking: boolean = false, isButtonAction: boolean = false, metadata?: any) {
-        const now = new Date();
-        this._messages.push({
-            role,
-            content,
-            timestamp: now.toLocaleTimeString('en-US', { hour12: false }),
-            isButtonAction,
-            buttonsUsed: false,
-            isIndicator: isThinking,
-            metadata: metadata
-        });
-        this.updateWebview();
+    public addMessage(
+        role: string,
+        content: string,
+        isThinking: boolean = false,
+        isButtonAction: boolean = false,
+        metadata?: any,
+        suggestions?: Array<{icon: string, label: string, action: string}>,
+        indicatorText?: string
+    ) {
+        // Indicator: delegate to showIndicator
+        if (isThinking) {
+            this.showIndicator(indicatorText || 'thinking');
+            return;
+        }
+
+        // Checkpoint: singleton
+        if (metadata?.isCheckpoint) {
+            this._checkpoint = this._createMessage('checkpoint', role, content, metadata);
+            this._notify();
+            return;
+        }
+
+        // Learning explanation: accumulate
+        if (metadata?.isLearningExplanation) {
+            const msg = this._createMessage('learning', role, content, metadata);
+            this._learningMessages.push(msg);
+            this._notify();
+            return;
+        }
+
+        // Critique: singleton
+        if (metadata?.isCritique) {
+            this._critique = this._createMessage('critique', role, content, metadata);
+            this._notify();
+            return;
+        }
+
+        // Agent notification: singleton
+        if (metadata?.isAgentNotification) {
+            this._agentNotification = this._createMessage('agent_notif', role, content, metadata);
+            this._notify();
+            return;
+        }
+
+        // Task list: singleton (usually handled by handleTaskListMessage)
+        if (metadata?.isTaskList) {
+            this._taskList = this._createMessage('task_list', role, content, metadata);
+            this._notify();
+            return;
+        }
+
+        // Default: conversation message
+        const msgType: MessageType = role === 'user' ? 'user' : 'assistant';
+        const msg = this._createMessage(msgType, role, content, metadata);
+        msg.isButtonAction = isButtonAction;
+        msg.suggestions = suggestions;
+        this._conversation.push(msg);
+        this._notify();
     }
 
     /**
-     * Clears all messages and resets task tracking state.
-     * Used when starting fresh conversations.
-     * 
-     * @interaction Called by ChatViewProvider on clear button click
+     * Clears all messages and resets state.
      */
     public clearMessages(): void {
-        this._messages.length = 0;
-        this.taskMessageIndex = -1;
+        this._conversation = [];
+        this._taskList = null;
+        this._agentNotification = null;
+        this._critique = null;
+        this._checkpoint = null;
+        this._learningMessages = [];
+        this._indicator = { visible: false, text: '' };
+        this._storedReferenceWorkflows = null;
+        this._storedReferenceNotebooks = null;
+        this._lastTaskStates = {};
+        this._taskJustCompleted = false;
     }
 
     /**
-     * Marks buttons in a specific message as used to prevent duplicate clicks.
-     * 
-     * @param messageIndex - Index of message containing buttons
-     * @returns True if buttons were marked, false if message not found
-     * @interaction Called when user clicks action buttons in messages
+     * Marks buttons in a message as used.
      */
     public markButtonsUsed(messageIndex: number): boolean {
-        if (messageIndex >= 0 && messageIndex < this._messages.length) {
-            this._messages[messageIndex].buttonsUsed = true;
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Removes the thinking indicator message if it's the last message.
-     * Used to clean up temporary status messages.
-     * 
-     * @returns True if indicator was removed, false if not found
-     * @interaction Called when agent response completes or errors
-     */
-    public removeThinkingIndicator(): boolean {
-        // Remove the last message if it's a thinking indicator
-        const lastIndex = this._messages.length - 1;
-        if (lastIndex >= 0) {
-            const message = this._messages[lastIndex];
-            if (message.isIndicator) {
-                this._messages.splice(lastIndex, 1);
+        const allMessages = this.messages;
+        if (messageIndex >= 0 && messageIndex < allMessages.length) {
+            const target = allMessages[messageIndex];
+            // Find in conversation array and mark
+            const convMsg = this._conversation.find(m => m.id === target.id);
+            if (convMsg) {
+                convMsg.buttonsUsed = true;
                 return true;
             }
         }
         return false;
     }
 
+    // ========== INDICATOR MANAGEMENT ==========
+
     /**
-     * Resets task list tracking for autonomous mode.
-     * Clears the tracked task list message index and stored reference workflows.
-     *
-     * @interaction Called when autonomous mode ends or resets
+     * Shows the activity indicator with specified text.
+     */
+    public showIndicator(text: string): void {
+        this._indicator = { visible: true, text };
+        this._notify();
+    }
+
+    /**
+     * Hides the activity indicator.
+     */
+    public hideIndicator(): void {
+        this._indicator = { visible: false, text: '' };
+        this._notify();
+    }
+
+    /**
+     * Updates indicator text without full re-render.
+     */
+    public updateIndicatorText(text: string, sendToWebview: (msg: any) => void): void {
+        this._indicator.text = text;
+        sendToWebview({ type: 'updateIndicator', text: text });
+    }
+
+    /**
+     * Legacy method - now just hides indicator.
+     */
+    public removeThinkingIndicator(): boolean {
+        if (this._indicator.visible) {
+            this._indicator = { visible: false, text: '' };
+            return true;
+        }
+        return false;
+    }
+
+    // ========== TRACKING RESET ==========
+
+    /**
+     * Resets task-related tracking for new autonomous session.
      */
     public resetTaskTracking(): void {
-        this.taskMessageIndex = -1;
-        this.critiqueMessageIndex = -1;
-        this.agentNotificationMessageIndex = -1;
+        this._taskList = null;
+        this._agentNotification = null;
+        this._critique = null;
+        this._learningMessages = [];
         this._storedReferenceWorkflows = null;
-        this._storedCritique = null;
-        this._storedAgentNotification = null;
+        this._storedReferenceNotebooks = null;
+        this._lastTaskStates = {};
+        this._taskJustCompleted = false;
+        // Keep conversation and indicator state
     }
 
     /**
-     * Removes any existing critique message from the chat.
-     * Called when a new task list arrives or when critique is replaced.
+     * Removes checkpoint message.
      */
-    private _removeCritiqueMessage(): void {
-        if (this.critiqueMessageIndex >= 0 && this.critiqueMessageIndex < this._messages.length) {
-            this._messages.splice(this.critiqueMessageIndex, 1);
-
-            // Adjust task message index if it was after the removed critique
-            if (this.taskMessageIndex > this.critiqueMessageIndex) {
-                this.taskMessageIndex--;
-            }
-
-            // Adjust agent notification index if it was after the removed critique
-            if (this.agentNotificationMessageIndex > this.critiqueMessageIndex) {
-                this.agentNotificationMessageIndex--;
-            }
-
-            this.critiqueMessageIndex = -1;
-        }
+    public removeCheckpointMessages(): void {
+        this._checkpoint = null;
+        this._notify();
     }
 
-    /**
-     * Removes any existing agent notification message from the chat.
-     * Called when a new task list arrives or when agent notification is replaced.
-     */
-    private _removeAgentNotificationMessage(): void {
-        if (this.agentNotificationMessageIndex >= 0 && this.agentNotificationMessageIndex < this._messages.length) {
-            this._messages.splice(this.agentNotificationMessageIndex, 1);
+    // ========== REFERENCE WORKFLOWS ==========
 
-            // Adjust task message index if it was after the removed agent notification
-            if (this.taskMessageIndex > this.agentNotificationMessageIndex) {
-                this.taskMessageIndex--;
-            }
-
-            // Adjust critique index if it was after the removed agent notification
-            if (this.critiqueMessageIndex > this.agentNotificationMessageIndex) {
-                this.critiqueMessageIndex--;
-            }
-
-            this.agentNotificationMessageIndex = -1;
-        }
-    }
-
-    /**
-     * Stores reference workflow IDs from ReferenceWorkflowSelectionTool output.
-     * These IDs will be displayed above the Analysis Plan in subsequent task lists.
-     *
-     * @param data - Reference workflow data from tool output
-     * @interaction Called by ChatViewProvider when reference_workflows message type is received
-     */
     public storeReferenceWorkflows(data: any): void {
         if (data && data.text) {
             this._storedReferenceWorkflows = data.text;
         }
+        if (data && data.notebooks) {
+            this._storedReferenceNotebooks = data.notebooks;
+        }
     }
 
+    // ========== FEEDBACK INSERTION ==========
+
     /**
-     * Inserts a user feedback message at a specific position in conversation history.
-     * Ensures feedback appears in correct chronological order after the original message.
-     * Updates any tracked indices that might be affected by the insertion.
-     * 
-     * @param message - Feedback message content
-     * @param afterIndex - Index to insert after (typically the original user message)
-     * @interaction Called by AutonomousExecution when user provides feedback
+     * Inserts a user feedback message at a specific position.
      */
     public insertFeedbackMessage(message: string, afterIndex: number): void {
-        const feedbackMessage = {
-            role: 'user',
-            content: message,
-            timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
-            isButtonAction: false,
-            buttonsUsed: false,
-            isIndicator: false,
-            metadata: { feedbackMessage: true }
-        };
+        const feedbackMessage = this._createMessage('user', 'user', message, { feedbackMessage: true });
 
-        // Insert after the specified index (original user message)
-        this._messages.splice(afterIndex + 1, 0, feedbackMessage);
-        
-        // Update all subsequent message indices that might be tracked
-        if (this.taskMessageIndex > afterIndex) {
-            this.taskMessageIndex++;
+        // Find the conversation message at the given index and insert after it
+        const allMessages = this.messages;
+        if (afterIndex >= 0 && afterIndex < allMessages.length) {
+            const targetId = allMessages[afterIndex].id;
+            const convIndex = this._conversation.findIndex(m => m.id === targetId);
+            if (convIndex >= 0) {
+                this._conversation.splice(convIndex + 1, 0, feedbackMessage);
+            } else {
+                // Target wasn't in conversation, just append
+                this._conversation.push(feedbackMessage);
+            }
+        } else {
+            this._conversation.push(feedbackMessage);
         }
 
-        this.updateWebview();
+        this._notify();
     }
 
-    // CONTEXT TO PASS TO PYTHON
+    // ========== DISPLAY MESSAGE HANDLERS ==========
 
     /**
-     * Prepares complete context for LLM message processing.
-     * Aggregates notebook state, execution history, and conversation context.
-     * Intelligently selects relevant context based on message content.
-     * 
-     * @param message - The message being processed
-     * @returns Complete context object for agent processing
-     * @interaction Called by ChatViewProvider and AutonomousExecution before sending to agent
+     * Handles task list display messages from the agent.
      */
+    public async handleTaskListMessage(displayResponse: any): Promise<void> {
+        try {
+            const autonomousActive = this.getAutonomousExecutionStatus && this.getAutonomousExecutionStatus();
+            const hasTaskListText = displayResponse.text !== undefined;
+
+            if (!autonomousActive && !hasTaskListText) {
+                return;
+            }
+
+            // Handle critique-only messages
+            if (displayResponse.critique !== undefined && !displayResponse.text) {
+                if (displayResponse.critique && displayResponse.critique.trim()) {
+                    const critiqueText = `**Reviewer agent:**\n\n${displayResponse.critique.trim()}`;
+                    this._critique = this._createMessage('critique', 'assistant', critiqueText, { isCritique: true });
+                }
+                this._notify();
+                return;
+            }
+
+            // Handle agent notification-only messages
+            if (displayResponse.agent_notification !== undefined && !displayResponse.text && !displayResponse.critique) {
+                if (displayResponse.agent_notification && typeof displayResponse.agent_notification === 'string' && displayResponse.agent_notification.trim()) {
+                    const notifText = `**Analyst agent:**\n\n${displayResponse.agent_notification.trim()}`;
+                    this._agentNotification = this._createMessage('agent_notif', 'assistant', notifText, { isAgentNotification: true });
+                }
+                this._notify();
+                return;
+            }
+
+            // Handle combined critique + agent notification (no task list)
+            if (!displayResponse.text && (displayResponse.critique || displayResponse.agent_notification)) {
+                if (displayResponse.critique && displayResponse.critique.trim()) {
+                    const critiqueText = `**Reviewer agent:**\n\n${displayResponse.critique.trim()}`;
+                    this._critique = this._createMessage('critique', 'assistant', critiqueText, { isCritique: true });
+                }
+                if (displayResponse.agent_notification && typeof displayResponse.agent_notification === 'string' && displayResponse.agent_notification.trim()) {
+                    const notifText = `**Analyst agent:**\n\n${displayResponse.agent_notification.trim()}`;
+                    this._agentNotification = this._createMessage('agent_notif', 'assistant', notifText, { isAgentNotification: true });
+                }
+                this._notify();
+                return;
+            }
+
+            // Regular task list message
+            const rawText = displayResponse.text;
+            const { text: messageText, tasks: structuredTasks } = this._formatTaskList(rawText);
+
+            const taskMetadata: any = { isTaskList: true };
+            if (structuredTasks) {
+                taskMetadata.tasks = structuredTasks;
+            }
+            if (this._storedReferenceNotebooks && this._storedReferenceNotebooks.length > 0) {
+                taskMetadata.referenceNotebooks = this._storedReferenceNotebooks;
+            }
+
+            // Update task list singleton - no index tracking needed
+            this._taskList = this._createMessage('task_list', 'assistant', messageText, taskMetadata);
+
+            // Clear previous iteration's agent notification and critique
+            // These should only display for one iteration
+            this._agentNotification = null;
+            this._critique = null;
+
+            // Handle agent notification if present with task list (for this iteration only)
+            if (displayResponse.agent_notification && typeof displayResponse.agent_notification === 'string' && displayResponse.agent_notification.trim()) {
+                const notifText = `**Analyst agent:**\n\n${displayResponse.agent_notification.trim()}`;
+                this._agentNotification = this._createMessage('agent_notif', 'assistant', notifText, { isAgentNotification: true });
+            }
+
+            // Handle critique if present with task list (for this iteration only)
+            if (displayResponse.critique && displayResponse.critique.trim()) {
+                const critiqueText = `**Reviewer agent:**\n\n${displayResponse.critique.trim()}`;
+                this._critique = this._createMessage('critique', 'assistant', critiqueText, { isCritique: true });
+            }
+
+            // Send targeted task list update if possible
+            if (this._sendToWebview && structuredTasks) {
+                const taskIndex = this.messages.findIndex(m => m.type === 'task_list');
+                if (taskIndex >= 0) {
+                    this._sendToWebview({
+                        type: 'updateTaskCards',
+                        taskIndex: taskIndex,
+                        tasks: structuredTasks
+                    });
+                }
+            }
+
+            this._notify();
+        } catch (error) {
+            console.error('Error in task list display message handling:', error);
+        }
+    }
+
+    /**
+     * Handles non-task-list display messages from the agent.
+     */
+    public async handleDisplayMessage(displayResponse: any): Promise<void> {
+        try {
+            let messageText = displayResponse.text;
+
+            if (messageText && messageText.trim().length > 0) {
+                const suggestions = displayResponse.suggestions || undefined;
+
+                let metadata: any = undefined;
+                if (displayResponse.isLearningExplanation) {
+                    metadata = { isLearningExplanation: true };
+                    if (displayResponse.referenceNotebook) {
+                        metadata.referenceNotebook = displayResponse.referenceNotebook;
+                    }
+                }
+
+                this.addMessage('assistant', messageText, false, false, metadata, suggestions);
+            }
+        } catch (error) {
+            console.error('Error in display message handling:', error);
+        }
+    }
+
+    // ========== CONTEXT PREPARATION ==========
+
     public async getContextForMessage(message: string): Promise<any> {
         const context: any = {};
 
-        // Get notebook editor - use tracked notebook to handle cases where another tab is focused
         const editor = this.notebookOps?.getNotebookEditor() || vscode.window.activeNotebookEditor;
         if (editor) {
             const selection = editor.selections[0];
@@ -299,46 +506,47 @@ export class ChatCore {
             context.notebookUri = editor.notebook.uri.toString();
             context.totalCells = editor.notebook.cellCount;
         }
-        
+
         context.ragEnabled = this._ragEnabled;
         context.turboEnabled = this._turboEnabled;
-        
+        context.interactionMode = this._interactionMode;
+        context.learningMode = this._learningMode;
+
         const config = vscode.workspace.getConfiguration('kai_agent');
         const apiKey = config.get('ollamaApiKey', '');
         if (apiKey) {
             context.ollamaApiKey = apiKey;
         }
-        
-        // Delegate to NotebookOperations for structured context
+
         context.conversationHistory = this._getConversationHistoryContext();
-        context.executionHistory = this.notebookOps.executionHistory;
-        context.modificationHistory = this.notebookOps.modificationHistory;
-        context.notebookStructure = this.notebookOps.getNotebookStructure();
+        context.executionHistory = this.notebookOps?.executionHistory || [];
+        context.modificationHistory = this.notebookOps?.modificationHistory || [];
+        context.notebookStructure = this.notebookOps?.getNotebookStructure() || [];
 
         return context;
     }
 
     private _getConversationHistoryContext(): Array<{role: string, content: string, timestamp: string, metadata?: any}> {
-        const estimateTokens = (text: string) => Math.ceil(text.length / 4); // ~4 chars per token
-        
-        // Get recent conversation messages, working backwards until we hit token limit
-        const allMessages = this._messages.filter(msg => !msg.isIndicator && msg.content.trim().length > 0);
+        const estimateTokens = (text: string) => Math.ceil(text.length / 4);
+
+        // Filter to non-indicator, non-empty messages
+        const allMessages = this.messages.filter(msg => msg.type !== 'indicator' && msg.content.trim().length > 0);
         let totalTokens = 0;
-        let selectedMessages: Array<{role: string, content: string, timestamp: string, metadata?: any}> = [];
-        
+        let selectedMessages: typeof allMessages = [];
+
         // Start from most recent and work backwards
         for (let i = allMessages.length - 1; i >= 0; i--) {
             const msg = allMessages[i];
             const entryTokens = estimateTokens(msg.content);
-            
+
             if (totalTokens + entryTokens > this.MAX_CONTEXT_TOKENS && selectedMessages.length > 0) {
-                break; // Stop if adding this message would exceed token limit
+                break;
             }
-            
-            selectedMessages.unshift(msg); // Add to beginning to maintain chronological order
+
+            selectedMessages.unshift(msg);
             totalTokens += entryTokens;
         }
-        
+
         return selectedMessages.map(msg => ({
             role: msg.role,
             content: msg.content,
@@ -347,179 +555,12 @@ export class ChatCore {
         }));
     }
 
-    // DISPLAY
+    // ========== TASK LIST FORMATTING ==========
 
-    /**
-     * Handles task lists and status update display messages from the agent.
-     * Replaces thinking indicators with actual content when appropriate.
-     *
-     * @param displayResponse - Display message from agent with text and intent
-     * @interaction Called by AgentProvider when agent sends display messages
-     */
-    public async handleTaskListMessage(displayResponse: any): Promise<void> {
-        try {
-            // Skip critique/notification messages if autonomous mode is no longer active,
-            // but ALWAYS process task list text updates (they show final completion status)
-            const autonomousActive = this.getAutonomousExecutionStatus && this.getAutonomousExecutionStatus();
-            const hasTaskListText = displayResponse.text !== undefined;
-
-            if (!autonomousActive && !hasTaskListText) {
-                // Skip critique-only messages when not in autonomous mode
-                return;
-            }
-
-            // Check if this is a critique-only message
-            if (displayResponse.critique !== undefined && !displayResponse.text) {
-                // This is a critique message - add it as a separate bubble
-                if (displayResponse.critique && displayResponse.critique.trim()) {
-                    // Remove any existing critique message
-                    this._removeCritiqueMessage();
-
-                    // Add new critique message right after the task list
-                    const critiqueText = `**Reviewer agent:**\n\n${displayResponse.critique.trim()}`;
-                    this.addMessage('assistant', critiqueText, false, false, {isCritique: true});
-                    this.critiqueMessageIndex = this._messages.length - 1;
-                }
-                this.updateWebview();
-                return;
-            }
-
-            // Check if this is an agent notification-only message
-            if (displayResponse.agent_notification !== undefined && !displayResponse.text && !displayResponse.critique) {
-                // This is an agent notification message - add it as a separate bubble
-                if (displayResponse.agent_notification &&
-                    typeof displayResponse.agent_notification === 'string' &&
-                    displayResponse.agent_notification.trim()) {
-                    // Remove any existing agent notification message
-                    this._removeAgentNotificationMessage();
-
-                    // Add new agent notification message right after the task list
-                    const agentNotificationText = `**Analyst agent:**\n\n${displayResponse.agent_notification.trim()}`;
-                    this.addMessage('assistant', agentNotificationText, false, false, {isAgentNotification: true});
-                    this.agentNotificationMessageIndex = this._messages.length - 1;
-                }
-                this.updateWebview();
-                return;
-            }
-
-            // Check if this is a combined critique + agent notification message (no task list)
-            if (!displayResponse.text && (displayResponse.critique || displayResponse.agent_notification)) {
-                // Handle critique if present
-                if (displayResponse.critique && displayResponse.critique.trim()) {
-                    this._removeCritiqueMessage();
-                    const critiqueText = `**Reviewer agent:**\n\n${displayResponse.critique.trim()}`;
-                    this.addMessage('assistant', critiqueText, false, false, {isCritique: true});
-                    this.critiqueMessageIndex = this._messages.length - 1;
-                }
-
-                // Handle agent notification if present
-                if (displayResponse.agent_notification &&
-                    typeof displayResponse.agent_notification === 'string' &&
-                    displayResponse.agent_notification.trim()) {
-                    this._removeAgentNotificationMessage();
-                    const agentNotificationText = `**Analyst agent:**\n\n${displayResponse.agent_notification.trim()}`;
-                    this.addMessage('assistant', agentNotificationText, false, false, {isAgentNotification: true});
-                    this.agentNotificationMessageIndex = this._messages.length - 1;
-                }
-
-                this.updateWebview();
-                return;
-            }
-
-            // Regular task list message handling
-            let messageText = displayResponse.text;
-
-            // Format the task list from JSON to readable format
-            messageText = this._formatTaskList(messageText);
-
-            // Remove any existing critique and agent notification messages when a new task list arrives
-            this._removeCritiqueMessage();
-            this._removeAgentNotificationMessage();
-
-            // Update existing task message if it exists, replace thinking message, or create new one
-            if (this.taskMessageIndex >= 0 && this.taskMessageIndex < this._messages.length) {
-                // Update existing task message in place
-                this._messages[this.taskMessageIndex].content = messageText;
-                this._messages[this.taskMessageIndex].timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
-            } else {
-                // Find and replace any thinking indicator with the task list
-                const thinkingIndex = this._messages.findIndex(m => m.isIndicator);
-                if (thinkingIndex >= 0) {
-                    this._messages[thinkingIndex].content = messageText;
-                    this._messages[thinkingIndex].isIndicator = false;
-                    this._messages[thinkingIndex].metadata = {isTaskList: true};
-                    this._messages[thinkingIndex].timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
-                    this.taskMessageIndex = thinkingIndex;
-                } else {
-                    // Create new task message and track its index
-                    this.addMessage('assistant', messageText, false, false, {isTaskList: true});
-                    this.taskMessageIndex = this._messages.length - 1;
-                }
-            }
-
-            // Handle agent notification if provided - display as green box below task list
-            if (displayResponse.agent_notification &&
-                typeof displayResponse.agent_notification === 'string' &&
-                displayResponse.agent_notification.trim()) {
-                // Store the agent notification
-                this._storedAgentNotification = displayResponse.agent_notification.trim();
-
-                // Add agent notification message right after the task list
-                const agentNotificationText = `**Analyst agent:**\n\n${this._storedAgentNotification}`;
-                this.addMessage('assistant', agentNotificationText, false, false, {isAgentNotification: true});
-                this.agentNotificationMessageIndex = this._messages.length - 1;
-            }
-
-            // Handle critique if provided with task list - display as red box below agent notification
-            if (displayResponse.critique && displayResponse.critique.trim()) {
-                // Store the critique
-                this._storedCritique = displayResponse.critique.trim();
-
-                // Add critique message after task list and agent notification
-                const critiqueText = `**Reviewer agent:**\n\n${this._storedCritique}`;
-                this.addMessage('assistant', critiqueText, false, false, {isCritique: true});
-                this.critiqueMessageIndex = this._messages.length - 1;
-            }
-
-            this.updateWebview();
-        } catch (error) {
-            console.error('Error in task list display message handling:', error);
-        }
-    }
-
-    /**
-     * Handles display messages from the agent, excluding task lists and status updates.
-     * 
-     * @param displayResponse - Display message from agent with text and intent
-     * @interaction Called by AgentProvider when agent sends display messages
-     */
-    public async handleDisplayMessage(displayResponse: any): Promise<void> {
-        try {
-            let messageText = displayResponse.text;
-            
-            // Skip error messages from tool failures during autonomous mode
-            if (messageText.trim().length > 0) {
-                // Only add non-empty messages
-                this.addMessage('assistant', messageText);
-            }
-        } catch (error) {
-            console.error('Error in display message handling:', error);
-        }
-    }
-
-    /**
-     * Formats JSON task list into readable markdown format.
-     * Converts task status to visual indicators (✅, 🏃, ⏳).
-     * Handles malformed JSON gracefully.
-     *
-     * @param text - Raw text potentially containing JSON task list
-     * @returns Formatted markdown task list or original text if parsing fails
-     * @interaction Called by handleTaskListMessage for task list display
-     */
-    private _formatTaskList(text: string): string {
+    private _formatTaskList(text: string): { text: string; tasks: Array<{id: string; task: string; status: string; isReasoning: boolean}> | null } {
         try {
             const jsonMatch = text.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) return text;
+            if (!jsonMatch) return { text, tasks: null };
 
             const jsonText = jsonMatch[0];
             let braceCount = 0;
@@ -527,28 +568,34 @@ export class ChatCore {
                 if (char === '{') braceCount++;
                 if (char === '}') braceCount--;
             }
-            if (braceCount !== 0) return text;
+            if (braceCount !== 0) return { text, tasks: null };
 
             const taskData = JSON.parse(jsonText);
-            if (!taskData.tasks) return text;
+            if (!taskData.tasks) return { text, tasks: null };
 
-            let formatted = '';
+            // Detect task completion for guided mode checkpoints
+            const currentTaskStates: Record<string, string> = {};
+            taskData.tasks.forEach((task: any) => {
+                currentTaskStates[task.id] = task.status;
+                if (this._lastTaskStates[task.id] === 'active' && task.status === 'completed') {
+                    this._taskJustCompleted = true;
+                }
+            });
+            this._lastTaskStates = currentTaskStates;
 
-            // Add reference workflow IDs if available (from stored data or task data)
-            const referenceWorkflows = this._storedReferenceWorkflows || taskData.reference_workflow_ids;
-            if (referenceWorkflows) {
-                formatted += `**Retrieved reference workflows**  \n`;
-                formatted += `${referenceWorkflows}`;
-                formatted += `\n\n`;
-            }
-
-            formatted += `**Chain-of-thought:**\n`;
+            let formatted = '**Chain-of-thought:**\n';
+            const structuredTasks: Array<{id: string; task: string; status: string; isReasoning: boolean}> = [];
 
             taskData.tasks.forEach((task: any) => {
-                // Check if task is a reasoning task
                 const isReasoning = task.task.toLowerCase().includes('[reasoning]');
 
-                // Different icons for reasoning vs code tasks
+                structuredTasks.push({
+                    id: task.id.toString(),
+                    task: task.task,
+                    status: task.status,
+                    isReasoning
+                });
+
                 let status: string;
                 if (isReasoning) {
                     status = task.status === 'completed' ? '✅' :
@@ -558,38 +605,26 @@ export class ChatCore {
                             task.status === 'active' ? '🏃' : '⏳';
                 }
 
-                // Option: Add subtle visual distinction for reasoning tasks
                 const taskText = isReasoning ? `*${task.task}*` : task.task;
                 formatted += `${status} ${task.id}. ${taskText}\n`;
             });
 
-            return formatted;
+            return { text: formatted, tasks: structuredTasks };
         } catch (e) {
             console.error('Failed to parse task list:', e);
-            return text;
+            return { text, tasks: null };
         }
     }
 
-    /**
-     * Loads and returns HTML template for webview chat interface.
-     * Reads from template file with fallback for errors.
-     * 
-     * @param _webview - VSCode webview instance (unused but required by interface)
-     * @returns HTML content for webview
-     * @interaction Called by ChatViewProvider when creating webview
-     */
+    // ========== HTML TEMPLATE ==========
+
     public getHtmlForWebview(_webview: vscode.Webview): string {
         try {
-            // Get the path to the template file
             const templatePath = path.join(__dirname, '..', 'templates', 'chat-template.html');
-            
-            // Read the template file
             const templateContent = fs.readFileSync(templatePath, 'utf8');
-            
             return templateContent;
         } catch (error) {
             console.error('Error loading chat template:', error);
-            // Fallback to a simple template if file loading fails
             return `<!DOCTYPE html>
 <html>
 <head>
@@ -602,4 +637,24 @@ export class ChatCore {
         }
     }
 
+    // ========== HELPER METHODS ==========
+
+    private _createMessage(type: MessageType, role: string, content: string, metadata?: any): ChatMessage {
+        return {
+            id: this._generateId(),
+            type,
+            role: role as 'user' | 'assistant',
+            content,
+            timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
+            metadata
+        };
+    }
+
+    private _generateId(): string {
+        return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    private _notify(): void {
+        this.updateWebview();
+    }
 }

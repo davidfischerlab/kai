@@ -119,8 +119,10 @@ TRANSIENT_FIELD_NAMES = [
     "next_task_activated",
     "tasks_updated",
     "update_approved",
-    "reasoning_critique_iteration",
-    "autonomous_update_critique_iteration",
+    # Evaluation iteration counters (evaluator-optimizer pattern)
+    "reasoning_evaluation_iteration",
+    "task_update_evaluation_iteration",
+    "task_list_evaluation_iteration",
     # Generation outputs (fresh each iteration)
     "generated_code",
     "reasoning_response",
@@ -138,14 +140,18 @@ TRANSIENT_FIELD_NAMES = [
     "backtrack_recovery_done",
     "cells_to_delete",
     "cells_deleted",
-    # Critique approvals (fresh each iteration)
-    "reasoning_approval",
-    "reasoning_critique",
-    "autonomous_update_approval",
-    "autonomous_update_critique",
+    # Evaluation grades and feedback (evaluator-optimizer pattern)
+    "reasoning_grade",
+    "reasoning_feedback",
+    "task_update_grade",
+    "task_update_feedback",
+    "task_list_grade",
+    "task_list_feedback",
+    # Task update context
     "task_list_update_rule",
-    "task_list_update_rationale",  # Reasoning for update, used in critique prompt
-    "task_list_backup",  # Used for reversion AND for critique prompt comparison
+    "task_list_update_rationale",  # Reasoning for update, used in evaluation prompt
+    "task_list_backup",  # Used for reversion AND for evaluation prompt comparison
+    # Note: learning_explanation_done removed - learning now runs in separate graph
 ]
 
 
@@ -161,8 +167,10 @@ def get_transient_defaults() -> Dict[str, Any]:
         "next_task_activated": False,
         "tasks_updated": False,
         "update_approved": False,
-        "reasoning_critique_iteration": 0,
-        "autonomous_update_critique_iteration": 0,
+        # Evaluation iteration counters (evaluator-optimizer pattern)
+        "reasoning_evaluation_iteration": 0,
+        "task_update_evaluation_iteration": 0,
+        "task_list_evaluation_iteration": 0,
         # Generation outputs (fresh each iteration)
         "generated_code": None,
         "reasoning_response": None,
@@ -180,14 +188,17 @@ def get_transient_defaults() -> Dict[str, Any]:
         "backtrack_recovery_done": None,
         "cells_to_delete": None,
         "cells_deleted": None,
-        # Critique approvals (fresh each iteration)
-        "reasoning_approval": None,
-        "reasoning_critique": None,
-        "autonomous_update_approval": None,
-        "autonomous_update_critique": None,
+        # Evaluation grades and feedback (evaluator-optimizer pattern)
+        "reasoning_grade": None,
+        "reasoning_feedback": None,
+        "task_update_grade": None,
+        "task_update_feedback": None,
+        "task_list_grade": None,
+        "task_list_feedback": None,
+        # Task update context
         "task_list_update_rule": None,
-        "task_list_update_rationale": None,  # Reasoning for update, used in critique prompt
-        "task_list_backup": None,  # Used for reversion AND for critique prompt comparison
+        "task_list_update_rationale": None,  # Reasoning for update, used in evaluation prompt
+        "task_list_backup": None,  # Used for reversion AND for evaluation prompt comparison
     }
 
 
@@ -331,7 +342,7 @@ class QueryWithMetadata(TypedDict):
 # =============================================================================
 
 # Planning phase tracking for explicit control flow
-PlanningPhase = Literal["workflow_retrieval", "task_planning", "workflow_refinement", "task_list_critique", "ready_to_generate", "complete"]
+PlanningPhase = Literal["workflow_retrieval", "task_planning", "workflow_refinement", "task_list_evaluation", "ready_to_generate", "complete"]
 
 
 class KaiState(TypedDict, total=False):
@@ -356,6 +367,7 @@ class KaiState(TypedDict, total=False):
     request_id: str
     autonomous_mode: bool
     rag_enabled: bool
+    learning_mode: bool  # Whether to pause and explain after each cell execution
     confirm_plan: bool  # Whether to pause after planning for user approval (True in VSCode, False in Jupyter)
     error_message: str
     notebook_uri: Optional[str]  # Path to notebook for session tracking and debug folder naming
@@ -393,6 +405,7 @@ class KaiState(TypedDict, total=False):
     # Execution tracking
     last_execution_failed: bool
     last_output: Optional[str]
+    execution_result: Optional[str]  # Output from last executed cell (for learning explanations)
 
     # Error handling
     error_context: Optional[Dict[str, Any]]
@@ -419,10 +432,10 @@ class KaiState(TypedDict, total=False):
 
     # Task updates
     task_list_update_rule: Optional[str]  # "UPDATE", "NO_UPDATE", or "BACKTRACK"
-    task_list_update_rationale: Optional[str]  # Reasoning for update, used in critique prompt
-    task_list_backup: Optional[Dict[str, Any]]  # Pre-update snapshot for reversion and critique comparison
+    task_list_update_rationale: Optional[str]  # Reasoning for update, used in evaluation
+    task_list_backup: Optional[Dict[str, Any]]  # Pre-update snapshot for reversion and comparison
     tasks_updated: bool  # Set by autonomous_update_tasks
-    update_approved: bool  # Set by autonomous_update_critique
+    update_approved: bool  # Set by task_update_evaluator
 
     # Positioning
     positioning_info: Optional[Dict[str, Any]]  # {target_cell: int}
@@ -433,16 +446,19 @@ class KaiState(TypedDict, total=False):
     is_reasoning_task: bool  # Whether active task is reasoning
     next_pending_task_objective: Optional[str]  # Next task for context
 
-    # Critique loops
-    use_critique: bool  # Whether to use critique loops (default True)
-    reasoning_critique_iteration: int  # Counter for reasoning critique loop (separate from autonomous update)
-    autonomous_update_critique_iteration: int  # Counter for autonomous update critique loop
-    task_list_approval: Optional[str]  # "APPROVED" or rejection reason
-    task_list_critique: Optional[str]  # Critique feedback for task list
-    reasoning_approval: Optional[str]  # "APPROVED" or rejection reason
-    reasoning_critique: Optional[str]  # Critique feedback for reasoning (CRITICAL for state propagation)
-    autonomous_update_approval: Optional[str]  # "APPROVED" or rejection reason
-    autonomous_update_critique: Optional[str]  # Critique feedback for autonomous updates
+    # Evaluator-optimizer loops
+    use_critique: bool  # Whether to use evaluation loops (default True)
+    # Evaluation iteration counters
+    reasoning_evaluation_iteration: int  # Counter for reasoning evaluation loop
+    task_update_evaluation_iteration: int  # Counter for task update evaluation loop
+    task_list_evaluation_iteration: int  # Counter for task list evaluation loop
+    # Evaluation grades and feedback
+    reasoning_grade: Optional[str]  # "APPROVED" or "REJECTED"
+    reasoning_feedback: Optional[str]  # Feedback for reasoning improvement
+    task_update_grade: Optional[str]  # "APPROVED" or "REJECTED"
+    task_update_feedback: Optional[str]  # Feedback for task update improvement
+    task_list_grade: Optional[str]  # "APPROVED" or "REJECTED"
+    task_list_feedback: Optional[str]  # Feedback for task list improvement
 
     # Backtracking
     reset_tasks: Optional[List[Dict[str, Any]]]  # Tasks to reset in backtracking
@@ -456,7 +472,10 @@ class KaiState(TypedDict, total=False):
 
     # Orchestrator phase tracking (replaces instance variables)
     auto_mode_first_execution_done: bool  # Whether first autonomous execution completed
-    auto_loop_update: Optional[str]  # "LOOP_COMPLETE" or None - signals completion to UI
+    auto_loop_update: Optional[str]  # "LOOP_COMPLETE", "LEARNING_MODE_PENDING", "LOOP_INCOMPLETE", or None - signals state to UI
+
+    # Note: learning_explanation_done removed - learning now runs in separate graph
+    # after code execution, not during the main execution graph
 
     # Planning phase tracking (for explicit control flow in planning)
     planning_phase: Optional[PlanningPhase]  # Current planning phase

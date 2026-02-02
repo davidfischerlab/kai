@@ -143,9 +143,15 @@ class CodeRetrievalTool(BaseTool):
                     import urllib.parse
                     parsed_uri = urllib.parse.urlparse(notebook_uri)
                     if parsed_uri.path:
-                        notebook_name = parsed_uri.path.split('/')[-1]  # Get filename
+                        path_parts = parsed_uri.path.split('/')
+                        notebook_name = path_parts[-1]  # Get filename
                         if notebook_name:  # Ensure we have a valid filename
-                            notebook_identifier = (notebook_name
+                            # Add full_agent_test prefix if this is a full_agent_test notebook
+                            if 'full_agent_test' in path_parts:
+                                notebook_identifier = f"full_agent_test/{notebook_name}"
+                            else:
+                                notebook_identifier = notebook_name
+                            notebook_identifier = (notebook_identifier
                                                    .replace('.', '_')
                                                    .replace(' ', '_'))
                 except Exception as parse_error:

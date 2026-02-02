@@ -38,7 +38,7 @@ async def increment_task_planning_iteration(
     return {
         "task_planning_iteration": new_value,
         "planning_phase": "ready_to_generate",
-        "task_list_approval": None,
+        "task_list_grade": None,
     }
 
 
@@ -67,16 +67,16 @@ async def revert_task_list(state: dict) -> dict:
             "task_list_backup": None,
             "tasks_updated": True,
             "update_approved": True,
-            "autonomous_update_critique_iteration": 0,  # Reset task update counter
+            "task_update_evaluation_iteration": 0,  # Reset task update counter
             "task_list_update_rule": None,
-            "autonomous_update_critique": None,
+            "task_update_feedback": None,
         }
     else:
         logger.error("[REVERT] No backup found! Cannot revert task list")
         return {
             "tasks_updated": True,
             "update_approved": True,
-            "autonomous_update_critique_iteration": 0,  # Reset task update counter
+            "task_update_evaluation_iteration": 0,  # Reset task update counter
             "task_list_update_rule": None,
-            "autonomous_update_critique": None,
+            "task_update_feedback": None,
         }

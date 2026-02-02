@@ -104,14 +104,38 @@ class SearchWorkflowsTool(BaseTool):
         result = await self.selection_tool.execute(state, **kwargs)
         state.update(result.output_workflow or {})
 
-        result = await self.cell_selection_tool.execute(state, **kwargs)
-        state.update(result.output_workflow or {})
+        cell_selection_result = await self.cell_selection_tool.execute(state, **kwargs)
+        state.update(cell_selection_result.output_workflow or {})
+
+        # Preserve cell selection's output_ui which contains notebooks data for UI cards
+        final_output_ui = cell_selection_result.output_ui
+        final_output_type = cell_selection_result.output_type
 
         if self.mode == "full":
-            result = await self.filter_tool.execute(state, **kwargs)
+            filter_result = await self.filter_tool.execute(state, **kwargs)
             # Filter tool may return empty output_workflow when no filtering needed
             # In this case, preserve reference_workflow_content from state
-            state.update(result.output_workflow or {})
+            state.update(filter_result.output_workflow or {})
+
+            # Merge filter's text with cell_selection's notebooks
+            # Filter tool may update the text (filtered list) but doesn't have notebooks data
+            if filter_result.output_ui and filter_result.output_ui.get("text"):
+                # Filter ran and updated the text - merge with notebooks from cell_selection
+                notebooks = final_output_ui.get("notebooks", []) if final_output_ui else []
+                if notebooks:
+                    # Filter the notebooks list to only include those still in the filtered text
+                    filtered_text = filter_result.output_ui.get("text", "")
+                    filtered_notebooks = [
+                        nb for nb in notebooks
+                        if nb.get("id") and nb.get("id") in filtered_text
+                    ]
+                    final_output_ui = {
+                        "text": filter_result.output_ui["text"],
+                        "notebooks": filtered_notebooks
+                    }
+                else:
+                    final_output_ui = filter_result.output_ui
+                final_output_type = filter_result.output_type
 
         # Update planning phase state for explicit control flow
         # - Set phase to "workflow_retrieval" to signal we're in retrieval loop
@@ -126,8 +150,8 @@ class SearchWorkflowsTool(BaseTool):
         all_searched = list(set(searched_queries + retrieval_queries))
 
         result_with_phase_tracking = ToolResult(
-            output_ui=result.output_ui,
-            output_type=result.output_type,
+            output_ui=final_output_ui,
+            output_type=final_output_type,
             output_workflow={
                 # Preserve PERSISTENT fields from state
                 "reference_workflow_content": state.get("reference_workflow_content", {}),

@@ -340,6 +340,16 @@ export class KaiAgentProvider {
                             });
                         }
                         continue;
+                    } else if (response.type === 'learning_explanation_complete') {
+                        // Handle learning explanation completion response
+                        const requestId = response.request_id;
+                        if (this.pendingRequests.has(requestId)) {
+                            const { resolve, timeout } = this.pendingRequests.get(requestId)!;
+                            clearTimeout(timeout);
+                            this.pendingRequests.delete(requestId);
+                            resolve({});  // No payload needed, just signal completion
+                        }
+                        continue;
                     } else if (response.type === 'error') {
                         // Handle error responses
                         const requestId = response.request_id;
@@ -544,6 +554,27 @@ export class KaiAgentProvider {
                 shouldContinue: true,
                 feedback: "Monitoring failed, defaulting to continue"
             };
+        }
+    }
+
+    /**
+     * Request learning explanation from Python after execution succeeded.
+     * This is called by VSCode AFTER it confirms that cell execution succeeded
+     * in learning mode, ensuring explanations only appear for successful executions.
+     *
+     * @param context - Context with task_list and other state info
+     * @returns Promise that resolves when learning explanation is complete
+     */
+    async requestLearningExplanation(context: any): Promise<void> {
+        try {
+            await this.sendRequest(
+                'request_learning_explanation',
+                { context },
+                60000 // 60 second timeout for learning explanation generation
+            );
+        } catch (error: any) {
+            console.error('Learning explanation request failed:', error.message);
+            // Non-fatal - continue without explanation
         }
     }
 

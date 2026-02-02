@@ -75,19 +75,19 @@ def route_standard_execution(
             logger.debug("[DET ROUTER] STANDARD_EXEC: updating tasks")
             return "autonomous_update_tasks"
 
-    # Step 3: Task update critique loop
-    # Pattern: UPDATE → CRITIQUE → (if rejected) UPDATE → CRITIQUE → ... (max 3 iterations)
+    # Step 3: Task update evaluation loop
+    # Pattern: UPDATE → EVALUATOR → (if rejected) UPDATE → EVALUATOR → ... (max 3)
     task_list_update_rule = safe_get(state, "task_list_update_rule")
-    critique_iteration = safe_get(state, "autonomous_update_critique_iteration", 0)
+    evaluation_iteration = safe_get(state, "task_update_evaluation_iteration", 0)
 
     if tasks_updated and task_list_update_rule == "UPDATE" and not update_approved:
-        if critique_iteration < 3:  # Max 3 iterations
-            autonomous_update_approval = safe_get(state, "autonomous_update_approval")
-            if autonomous_update_approval == "APPROVED":
+        if evaluation_iteration < 3:  # Max 3 iterations
+            task_update_grade = safe_get(state, "task_update_grade")
+            if task_update_grade == "APPROVED":
                 if send_message:
                     send_message(
                         f"[KAI] Task list update approved after "
-                        f"{critique_iteration} critique iterations"
+                        f"{evaluation_iteration} evaluation iterations"
                     )
                 logger.debug("[DET ROUTER] Task update approved")
                 # Log the approved task list
@@ -97,30 +97,30 @@ def route_standard_execution(
                     task_text = task.get("task", task.get("objective", "No objective"))
                     logger.info(f"  {i}. {task_text}")
                 # Continue to next step
-            elif autonomous_update_approval is None:
-                # No approval yet - run critique
+            elif task_update_grade is None:
+                # No grade yet - run evaluator
                 logger.debug(
-                    f"[DET ROUTER] STANDARD_EXEC: task update critique "
-                    f"(iter {critique_iteration + 1})"
+                    f"[DET ROUTER] STANDARD_EXEC: task update evaluator "
+                    f"(iter {evaluation_iteration + 1})"
                 )
-                return "autonomous_update_critique"
+                return "task_update_evaluator"
             else:
-                # Critique returned MODIFY - regenerate task list
+                # Evaluator returned REJECTED - regenerate task list
                 logger.debug(
                     f"[DET ROUTER] Task update not approved "
-                    f"(iter {critique_iteration}), regenerating task list"
+                    f"(iter {evaluation_iteration}), regenerating task list"
                 )
                 return "autonomous_update_tasks"
         else:
             # Max iterations reached without approval - revert to backup
             if send_message:
                 send_message(
-                    f"[KAI] Task list update critique reached max iterations (3) "
+                    f"[KAI] Task list update evaluation reached max iterations (3) "
                     f"without approval - reverting to previous task list"
                 )
             logger.warning(
-                f"[DET ROUTER] Task update critique reached max iterations "
-                f"({critique_iteration}) without approval - reverting to backup"
+                f"[DET ROUTER] Task update evaluation reached max iterations "
+                f"({evaluation_iteration}) without approval - reverting to backup"
             )
             return "revert_task_list"
 

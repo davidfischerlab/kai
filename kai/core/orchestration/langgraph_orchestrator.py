@@ -45,6 +45,7 @@ from kai.core.orchestration.graphs import (
     build_execution_subgraph_for_studio,
     build_regular_subgraph,
     build_section_execution_subgraph,
+    build_learning_graph,
     AUTONOMOUS_TOOLS,
 )
 from kai.utils import setup_logger, safe_get
@@ -115,6 +116,9 @@ class LangGraphOrchestrator:
             section_complete_success_node=section_complete_success,
             section_complete_failure_node=section_complete_failure,
         )
+        # Build learning graph for post-execution explanations
+        # This runs separately from main graph, after code execution succeeds
+        self._learning_graph = build_learning_graph(tools=self.tools)
 
         # Build main graph that orchestrates subgraphs
         # Pass checkpointer for state persistence (enables restart/resume)
@@ -205,6 +209,81 @@ class LangGraphOrchestrator:
             'planning': self._planning_subgraph,  # Already no checkpointer
             'execution': execution_for_studio,
         }
+
+    async def _run_learning_graph(
+        self,
+        state_values: dict,
+        session_metadata: dict
+    ) -> None:
+        """Run learning graph to generate post-execution explanation.
+
+        This runs the learning_explanation tool with access to execution results,
+        then sends the explanation to VSCode for display.
+
+        Args:
+            state_values: Current state after main graph execution
+            session_metadata: Session metadata for UI context
+        """
+        self._send_message("[KAI] Generating learning explanation...")
+
+        # Run learning graph with current state
+        # Note: Learning graph is flat (no subgraphs), so don't filter by namespace
+        async for output in self._learning_graph.astream(state_values):
+            for node_name, node_output in output.items():
+                if node_output and '_last_tool_result' in node_output:
+                    # Send learning explanation to UI
+                    await self._send_tool_result_to_ui(
+                        node_output['_last_tool_result'],
+                        session_metadata
+                    )
+
+    async def run_learning_explanation_for_vscode(
+        self,
+        context: dict,
+        session_metadata: dict
+    ) -> None:
+        """Run learning graph when VSCode requests it after successful execution.
+
+        This is called by VSCode AFTER it confirms that cell execution succeeded.
+        This ensures learning explanations only run when execution actually succeeded,
+        avoiding the race condition where Python decides to run learning based on
+        outdated context before VSCode has finished executing the cell.
+
+        Args:
+            context: Context from VSCode with task_list and other state
+            session_metadata: Session metadata for UI context
+        """
+        # Get state from checkpointer to access task_list and other workflow state
+        config = {"configurable": {"thread_id": session_metadata.get("session_id", "default")}}
+        try:
+            state_snapshot = await self.main_graph.aget_state(config)
+            state_values = (
+                state_snapshot.values if hasattr(state_snapshot, 'values')
+                else state_snapshot
+            )
+        except Exception as e:
+            logger.warning(f"Could not get state from checkpointer: {e}, using context")
+            state_values = context
+
+        # Merge execution result from context into state
+        # The checkpointer state is from BEFORE VSCode executed the cell,
+        # so we need to update it with the latest execution result
+        # Context is already translated to snake_case by agent.run_learning_explanation()
+        state_values['execution_result'] = context['execution_result']
+
+        # Merge session_metadata fields needed for debug logging
+        # These fields (session_timestamp, iteration_timestamp, notebook_uri) are set by agent.py
+        # but may not be in the checkpointer state
+        for key in ['session_timestamp', 'iteration_timestamp', 'notebook_uri', 'session_id']:
+            if key in session_metadata:
+                state_values[key] = session_metadata[key]
+
+        # autonomous_mode is required for _log_prompt but not in session_metadata
+        # Learning explanation only runs in autonomous mode, so set it explicitly
+        state_values['autonomous_mode'] = True
+
+        # Run the learning graph
+        await self._run_learning_graph(state_values, session_metadata)
 
     # =========================================================================
     # Node Wrappers (call stateless node functions with dependencies)
@@ -471,10 +550,30 @@ class LangGraphOrchestrator:
                     else:
                         self._send_message(f"[KAI] END: autonomous iteration - standard step (completed in {duration:.3f}s)")
 
-                    await self.vscode.send_workflow_result(
-                        field="auto_loop_update",
-                        state="LOOP_INCOMPLETE"
-                    )
+                    # Check if this is a learning mode iteration where VSCode should
+                    # request a learning explanation AFTER it confirms execution succeeded.
+                    # Note: We don't run learning graph here because Python doesn't know the
+                    # actual execution result yet (VSCode executes asynchronously).
+                    learning_mode = context.get("learning_mode", False)
+                    is_continue_iteration = context.get("autonomous_mode_continue", False)
+                    # Signal to VSCode that this is a learning mode iteration
+                    # VSCode will request learning explanation only if execution actually succeeds
+                    is_potential_learning_iteration = learning_mode and is_continue_iteration and not is_standard_retry
+
+                    if is_potential_learning_iteration:
+                        # Signal that VSCode should request learning explanation after
+                        # confirming execution succeeded. VSCode will call
+                        # run_learning_explanation_for_vscode() if execution succeeds.
+                        await self.vscode.send_workflow_result(
+                            field="auto_loop_update",
+                            state="LEARNING_MODE_PENDING"
+                        )
+                    else:
+                        # Normal flow - signal iteration complete
+                        await self.vscode.send_workflow_result(
+                            field="auto_loop_update",
+                            state="LOOP_INCOMPLETE"
+                        )
             else:
                 # Regular mode (non-autonomous)
                 await self.vscode.send_workflow_result(

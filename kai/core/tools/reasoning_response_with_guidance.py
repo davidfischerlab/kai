@@ -36,7 +36,7 @@ class ReasoningResponseWithGuidanceTool(UnstructuredPromptTool):
     **Used by workflows:** Autonomous execution workflows when reasoning task is active
 
     **Special behavior:**
-    - Determines replace vs insert based on reasoning_critique or retry_objective presence
+    - Determines replace vs insert based on reasoning_feedback or retry_objective
     - Clears backtracking state to prevent it from persisting to next iteration
     """
 
@@ -47,15 +47,15 @@ class ReasoningResponseWithGuidanceTool(UnstructuredPromptTool):
         """Process code generation response and format for VSCode (always autonomous mode)."""
         positioning_info = state["positioning_info"]
 
-        # Check if this is a re-generation (after critique) - if so, replace
+        # Check if this is a re-generation (after evaluation) - if so, replace
         # the previous reasoning cell:
-        # 1) replace if critique iteration (reasoning_critique has value)
+        # 1) replace if evaluation feedback exists (reasoning_feedback has value)
         # 2) replace if retry of reasoning task (retry_objective has value)
         # IMPORTANT: Check value is not None, not just key presence - LangGraph
         # state has keys with None values, and `"key" in dict` returns True
         # even when value is None.
         should_replace = (
-            state.get("reasoning_critique") is not None or
+            state.get("reasoning_feedback") is not None or
             state.get("retry_objective") is not None
         )
 
@@ -72,12 +72,12 @@ class ReasoningResponseWithGuidanceTool(UnstructuredPromptTool):
             "should_replace": should_replace,  # Boolean: True if critique rejected or retry flagged incomplete
             "cell_type": "markdown"
         }
-        # Make reasoning available for potential critiques:
+        # Make reasoning available for potential evaluation:
         output_workflow = {
             "reasoning_response": response,
-            # CRITICAL: Clear reasoning_approval after regeneration so router routes to critique
-            # Without this, the router keeps seeing approval="MODIFY" and regenerates infinitely
-            "reasoning_approval": None,
+            # CRITICAL: Clear reasoning_grade after regeneration so router routes to evaluator
+            # Without this, the router keeps seeing grade="REJECTED" and regenerates infinitely
+            "reasoning_grade": None,
             # Clear backtracking/retry state to prevent it from persisting to next iteration
             "cells_to_delete": None,
             "cells_deleted": None,

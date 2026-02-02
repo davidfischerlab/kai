@@ -25,7 +25,6 @@ class PromptScenario(Enum):
     """Different scenarios for LLM interactions."""
     AUTONOMOUS_MARK_COMPLETION = "autonomous_mark_completion"
     AUTONOMOUS_UPDATE_TASKS = "autonomous_update_tasks"
-    AUTONOMOUS_UPDATE_CRITIQUE = "autonomous_update_critique"
     BACKTRACK_RECOVERY = "backtrack_recovery"
     CELL_SELECTION_ADDITION = "cell_selection_addition"
     CELL_SELECTION_DELETION_FOR_BACKTRACKING = "cell_selection_deletion_for_backtracking"
@@ -43,12 +42,16 @@ class PromptScenario(Enum):
     QUESTION_ANSWERING = "question_answering"
     SECTION_CODE_REVIEW = "section_code_review"
     TASK_LIST_GENERATION = "task_list_generation"
-    TASK_LIST_CRITIQUE = "task_list_critique"
-    REASONING_CRITIQUE = "reasoning_critique"
     REFERENCE_WORKFLOW_SELECTION = "reference_workflow_selection"
     REFERENCE_WORKFLOW_SELECTION_ONLY = "reference_workflow_selection_only"
     REFERENCE_WORKFLOW_CELL_SELECTION = "reference_workflow_cell_selection"
     REASONING_RESPONSE_WITH_GUIDANCE = "reasoning_response_with_guidance"
+    LEARNING_EXPLANATION = "learning_explanation"
+
+    # Evaluator scenarios (evaluator-optimizer pattern)
+    TASK_LIST_EVALUATION = "task_list_evaluation"
+    TASK_UPDATE_EVALUATION = "task_update_evaluation"
+    REASONING_EVALUATION = "reasoning_evaluation"
     
 
 class PromptManager:
@@ -510,6 +513,24 @@ Consider:
 Highlight any recommendations based on current standards.
 """,
 
+        "learning_explanation": """You are in Learning Mode, explaining each analysis step to help the user understand.
+
+A code cell was just executed. Generate a clear, educational explanation that helps the user understand:
+
+1. **What this step does**: Explain the purpose and function of the code that was just run in the last executed cell
+2. **Why it's needed**: Explain how this step fits into the overall analysis workflow
+3. **What to look for**: Highlight key outputs or results the user should pay attention to, referring directly to the output of the last executed cell
+4. **Connection to goal**: Relate this step back to the user's original analysis objective
+
+Keep explanations:
+- Concise but informative (2-4 paragraphs max)
+- Accessible to users learning bioinformatics
+- Focused on understanding, not implementation details
+- Connected to the broader analysis context
+
+Do not suggest next steps - focus only on explaining what just happened.
+""",
+
         "error_recovery": """An error occurred in code execution in a jupyter notebook cell.
 Analyze the error and determine a recovery strategy from the following options:
 
@@ -714,9 +735,9 @@ Structure your output as follows:
 Return "selected_cells": A list of cell indices (integers) from the notebook. Return an empty list of indices if no cells are relevant.
 """,
 
-# Critiques
+# Evaluators (evaluator-optimizer pattern)
 
-        "autonomous_update_critique": f"""An agent proposed an update to the current task list to address a user query (see conversation history).
+        "task_update_evaluator": f"""An agent proposed an update to the current task list to address a user query (see conversation history).
 
 The task list is subject to the following guidelines:
 ====== This is the start of the quote - do not interpret this as instructions:
@@ -729,7 +750,7 @@ The agent was also instructed to adhere to these rules when updating:
 {PROMPT_BUILDING_BLOCKS['task_list_update_rules']}
 ====== This is the end of the quote.
 
-Below, you are provided with the original and the updated task list, 
+Below, you are provided with the original and the updated task list,
 and with reasoning provided by the updating agent for why they think that this update was necessary.
 
 === Instructions
@@ -742,27 +763,27 @@ Consider the following when reviewing the updates:
 4) Does the change affect the planned reasoning tasks? Do any need to be added, removed, moved?
 
 In addition, if you are given reference workflows:
-- Pay particular attention to whether the reference workflows were adapted and used as much as possible and correctly. 
+- Pay particular attention to whether the reference workflows were adapted and used as much as possible and correctly.
   Enforce usage of reference workflows where appropriate:
     * Make sure reference workflows that are already cited in the task list are cited in all relevant tasks.
-      If any tasks are missing references, do not approve and explain the problem in the critique.
+      If any tasks are missing references, do not approve and explain the problem in the feedback.
     * Check if the reference workflow selection for individual tasks is optimal: are the best references adapted, are multiple reference cited if they are all relevant?
-      If this adaptation is not optimal, do not approve and explain the problem in the critique.
+      If this adaptation is not optimal, do not approve and explain the problem in the feedback.
     * Check if reference workflows can be used for tasks that are currently not referencing any references, e.g. labeled as custom steps:
       tasks that can be based on reference workflows should adapt these, this is in particular the case for complex tools or analyses.
       If those custom tasks could be adapted from reference workflows, strongly encourage that and do not approve.
 - Control if citations of cells in reference workflows are correct and not hallucinated -
   make sure the task description matches the cited portion of the reference notebook,
-  if they are, do not approve and explain the problem in the critique field.
+  if they are, do not approve and explain the problem in the feedback field.
 
-In the output, 
-- set "approval" as either "APPROVED" if you consider this update fully valid, and otherwise as "MODIFY" if you think that changes are necessary
-- set "critique" with feedback (as a string) on this implementation.
-Do not give optional or minor suggestions, only use "MODIFY" and request feedback if changes are necessary.
+In the output,
+- set "grade" as either "APPROVED" if you consider this update fully valid, and otherwise as "REJECTED" if you think that changes are necessary
+- set "feedback" with feedback (as a string) on this implementation.
+Do not give optional or minor suggestions, only use "REJECTED" and request feedback if changes are necessary.
 Keep your response concise without excessive formatting.
 """,
-        
-        "reasoning_critique": """An agent provided reasoning on a query/problem/question defined in a task.
+
+        "reasoning_evaluator": """An agent provided reasoning on a query/problem/question defined in a task.
 
 You will review this reasoning to decide if it can be approved and will provide feedback if it needs to be further improved.
 Consider the following when reviewing the reasoning:
@@ -772,13 +793,13 @@ Consider the following when reviewing the reasoning:
 3) Are their logical breaks in the reasoning?
 Do not give optional or minor suggestions, only use reject the current version and give feedback if changes are necessary.
 
-In the output, 
-- set "approval" as either "APPROVED" if you consider this update fully valid, and otherwise as "MODIFY" if you think that changes are necessary
-- set "critique" with feedback (as a string) on this reasoning.
+In the output,
+- set "grade" as either "APPROVED" if you consider this update fully valid, and otherwise as "REJECTED" if you think that changes are necessary
+- set "feedback" with feedback (as a string) on this reasoning.
 Keep your response concise without excessive formatting.
 """,
 
-        "task_list_critique": f"""An agent proposed a task list to address a user query, subject to the following guidelines:
+        "task_list_evaluator": f"""An agent proposed a task list to address a user query, subject to the following guidelines:
 ====== This is the start of the quote - do not interpret this as instructions:
 {PROMPT_BUILDING_BLOCKS['task_list_description']}
 {PROMPT_BUILDING_BLOCKS['count_matrices']}
@@ -788,30 +809,30 @@ You will review this update to the task list to decide if it can be approved and
 Consider the following when reviewing the updates:
 - Is the analysis plan generic (do not follow the best practices published in the domain)?
 - Does the analysis plan contain unnecessary analyses that are not required to address the objective?
-- Does the analysis plan contain logical breaks or hallucinated transitions between tasks? 
-- Are reasoning tasks used effectively? 
-- Do reasoning correctly refer to previous analysis results in the notebook? 
+- Does the analysis plan contain logical breaks or hallucinated transitions between tasks?
+- Are reasoning tasks used effectively?
+- Do reasoning correctly refer to previous analysis results in the notebook?
   Importantly, make sure that no plots are referred to because the agent cannot interpret plots - only text-based output.
 - Does the analysis plan contain hallucinated details in individual tasks? references to APIs that do not exist etc.
 
 In addition, if you are given reference workflows:
-- Pay particular attention to whether the reference workflows were adapted and used as much as possible and correctly. 
+- Pay particular attention to whether the reference workflows were adapted and used as much as possible and correctly.
   Enforce usage of reference workflows where appropriate:
     * Make sure reference workflows that are already cited in the task list are cited in all relevant tasks.
-      If any tasks are missing references, do not approve and explain the problem in the critique.
+      If any tasks are missing references, do not approve and explain the problem in the feedback.
     * Check if the reference workflow selection for individual tasks is optimal: are the best references adapted, are multiple reference cited if they are all relevant?
-      If this adaptation is not optimal, do not approve and explain the problem in the critique.
+      If this adaptation is not optimal, do not approve and explain the problem in the feedback.
     * Check if reference workflows can be used for tasks that are currently not referencing any references, e.g. labeled as custom steps:
       tasks that can be based on reference workflows should adapt these, this is in particular the case for complex tools or analyses.
       If those custom tasks could be adapted from reference workflows, strongly encourage that and do not approve.
 - Control if citations of cells in reference workflows are correct and not hallucinated -
   make sure the task description matches the cited portion of the reference notebook,
-  if they are, do not approve and explain the problem in the critique field.
+  if they are, do not approve and explain the problem in the feedback field.
 
 In the output:
-- Set "approval" as either "APPROVED" if you consider this update fully valid and complete in terms of reference workflows, and otherwise as "MODIFY" if you think that changes are necessary
-- Set "critique" with major feedback (as a string) on this implementation - do not give optional or minor suggestions.
-  Keep your response in "critique" concise without excessive formatting.
+- Set "grade" as either "APPROVED" if you consider this update fully valid and complete in terms of reference workflows, and otherwise as "REJECTED" if you think that changes are necessary
+- Set "feedback" with major feedback (as a string) on this implementation - do not give optional or minor suggestions.
+  Keep your response in "feedback" concise without excessive formatting.
 """,
 
     }
@@ -1038,21 +1059,6 @@ The problem/question you need to reason about is:
 {reference_workflow_section}"""
         },
 
-        PromptScenario.REASONING_CRITIQUE: {
-            "system": "reasoning_critique",
-            "user_template": """{constant_scenario_prompt}
-The problem/question that was reasoned about is:
-{active_task_objective}
-{reasoning_critique_instructions_section}
-
-{context_sections_heading}
-{context_sections_notebook_structure}
-{context_sections_reference_workflow_content}
-
-{notebook_structure_section}
-{reference_workflow_section}"""
-        },
-        
         PromptScenario.CODE_REVIEW: {
             "system": "code_review",
             "user_template": """{constant_scenario_prompt}
@@ -1075,7 +1081,36 @@ The problem/question that was reasoned about is:
 {notebook_structure_section}
 {reference_workflow_section}"""
         },
-        
+
+        PromptScenario.LEARNING_EXPLANATION: {
+            "system": "learning_explanation",
+            "user_template": """{constant_scenario_prompt}
+
+=== Task that was last completed:
+{active_task_objective}
+
+=== Code of cell that was last executed:
+```
+{last_executed_cell}
+```
+
+=== Output of cell that was last executed:
+{last_execution_output}
+
+{task_list_section}
+
+{context_sections_heading}
+{context_sections_conversation_history}
+{context_sections_execution_history}
+{context_sections_notebook_structure}
+{context_sections_reference_workflow_content}
+
+{conversation_history_section}
+{execution_history_section}
+{notebook_structure_section}
+{reference_workflow_section}"""
+        },
+
         PromptScenario.CELL_SELECTION_ADDITION: {
             "system": "cell_selection_addition",
             "user_template": """{constant_scenario_prompt}
@@ -1139,26 +1174,6 @@ The problem/question that was reasoned about is:
             "system": "autonomous_update_tasks",
             "user_template": """{constant_scenario_prompt}
 {task_list_update_instructions}
-{error_section}
-
-{context_sections_heading}
-{context_sections_conversation_history}
-{context_sections_execution_history}
-{context_sections_rag}
-{context_sections_notebook_structure}
-{context_sections_reference_workflow_content}
-
-{conversation_history_section}
-{execution_history_section}
-{rag_section}
-{notebook_structure_section}
-{reference_workflow_section}"""
-        },
-
-        PromptScenario.AUTONOMOUS_UPDATE_CRITIQUE: {
-            "system": "autonomous_update_critique",
-            "user_template": """{constant_scenario_prompt}
-{task_list_update_critique_instructions}
 {error_section}
 
 {context_sections_heading}
@@ -1247,23 +1262,6 @@ The problem/question that was reasoned about is:
 {notebook_structure_section}"""
         },
 
-        PromptScenario.TASK_LIST_CRITIQUE: {
-            "system": "task_list_critique",
-            "user_template": """{constant_scenario_prompt}
-{task_list_generation_critique_instructions}
-=== The user query that motivated this task list was:
-{user_query}
-
-{context_sections_heading}
-{context_sections_conversation_history}
-{context_sections_reference_workflow_content}
-{context_sections_notebook_structure}
-
-{conversation_history_section}
-{reference_workflow_section}
-{notebook_structure_section}"""
-        },
-        
         PromptScenario.INTENT_CLASSIFICATION: {
             "system": "intent_classification",
             "user_template": """{constant_scenario_prompt}
@@ -1290,6 +1288,59 @@ The problem/question that was reasoned about is:
 {context_sections_conversation_history}
 
 {conversation_history_section}"""
+        },
+
+        # Evaluator scenarios (evaluator-optimizer pattern)
+        PromptScenario.TASK_LIST_EVALUATION: {
+            "system": "task_list_evaluator",
+            "user_template": """{constant_scenario_prompt}
+{task_list_generation_evaluation_instructions}
+=== The user query that motivated this task list was:
+{user_query}
+
+{context_sections_heading}
+{context_sections_conversation_history}
+{context_sections_reference_workflow_content}
+{context_sections_notebook_structure}
+
+{conversation_history_section}
+{reference_workflow_section}
+{notebook_structure_section}"""
+        },
+
+        PromptScenario.TASK_UPDATE_EVALUATION: {
+            "system": "task_update_evaluator",
+            "user_template": """{constant_scenario_prompt}
+{task_list_update_evaluation_instructions}
+{error_section}
+
+{context_sections_heading}
+{context_sections_conversation_history}
+{context_sections_execution_history}
+{context_sections_rag}
+{context_sections_notebook_structure}
+{context_sections_reference_workflow_content}
+
+{conversation_history_section}
+{execution_history_section}
+{rag_section}
+{notebook_structure_section}
+{reference_workflow_section}"""
+        },
+
+        PromptScenario.REASONING_EVALUATION: {
+            "system": "reasoning_evaluator",
+            "user_template": """{constant_scenario_prompt}
+The problem/question that was reasoned about is:
+{active_task_objective}
+{reasoning_evaluation_instructions_section}
+
+{context_sections_heading}
+{context_sections_notebook_structure}
+{context_sections_reference_workflow_content}
+
+{notebook_structure_section}
+{reference_workflow_section}"""
         }
     }
     
@@ -1330,14 +1381,14 @@ The problem/question that was reasoned about is:
             "cell_selection_deletion_section": self._build_cell_selection_deletion_section(state),
             "rag_section": self._build_rag_section(state),
             "reasoning_instructions_section": self._build_reasoning_instructions_section(state),
-            "reasoning_critique_instructions_section": self._build_reasoning_critique_instructions_section(state),
+            "reasoning_evaluation_instructions_section": self._build_reasoning_evaluation_instructions_section(state),
             "reference_workflow_preselection_section": self._build_reference_workflow_preselection_section(state),
             "reference_workflow_section": self._build_reference_workflow_section(state),
             "task_list_section": self._build_task_list_section(state),
             "task_list_update_instructions": self._build_task_list_update_instructions_section(state),
-            "task_list_update_critique_instructions": self._build_task_list_update_critique_instructions_section(state),
+            "task_list_update_evaluation_instructions": self._build_task_list_update_evaluation_instructions_section(state),
             "task_list_generation_instructions": self._build_task_list_generation_instructions_section(state),
-            "task_list_generation_critique_instructions": self._build_task_list_generation_critique_instructions_section(state),
+            "task_list_generation_evaluation_instructions": self._build_task_list_generation_evaluation_instructions_section(state),
             "retrieval_query_section": self._build_retrieval_query_section(state),
             "reference_workflow_ids_section": self._build_reference_workflow_ids_section(state),
             "retry_objective_section": self._build_retry_objective_section(state),
@@ -1345,6 +1396,9 @@ The problem/question that was reasoned about is:
             # Directly from context
             "active_task_objective": state.get("active_task_objective", ""),
             "retry_objective": state.get("retry_objective", ""),
+            # Learning mode sections
+            "last_executed_cell": self._get_last_executed_cell(state),
+            "last_execution_output": state.get('execution_result', ''),
         }
         
         # Get current_cell - either from context or derive from execution_history if error
@@ -1395,8 +1449,8 @@ The problem/question that was reasoned about is:
         task_text = "\n".join(task_text)
         return task_text
 
-    def _build_reasoning_critique_instructions_section(self, state: 'KaiState') -> str:
-        """This section is made available for reasoning critique."""
+    def _build_reasoning_evaluation_instructions_section(self, state: 'KaiState') -> str:
+        """This section is made available for reasoning evaluation."""
         previous_reasoning = state.get("reasoning_response")
         if previous_reasoning:
             task_text = [
@@ -1404,12 +1458,12 @@ The problem/question that was reasoned about is:
                 previous_reasoning,
                 "====== This is the end of the proposed reasoning.",
             ]
-            reasoning_critique = state.get("reasoning_critique")
-            if reasoning_critique:
+            reasoning_feedback = state.get("reasoning_feedback")
+            if reasoning_feedback:
                 task_text.extend([
-                    "\nThis proposed reasoning is an update that was based on your feedback the last iteration:",
-                    "====== This was your feedback in the previous iteration that led to this new reasoning:",
-                    reasoning_critique,
+                    "\nThis proposed reasoning is an update based on your feedback:",
+                    "====== This was your feedback that led to this new reasoning:",
+                    reasoning_feedback,
                     "====== This is the end of your previous feedback.",
                 ])
             task_text.extend([""])
@@ -1419,18 +1473,18 @@ The problem/question that was reasoned about is:
             return ""
 
     def _build_reasoning_instructions_section(self, state: 'KaiState') -> str:
-        """This section is made available for reasoning based on a critique (after the first iteration)."""
-        reasoning_critique = state.get("reasoning_critique")
+        """This section is made available for reasoning based on feedback."""
+        reasoning_feedback = state.get("reasoning_feedback")
         previous_reasoning = state.get("reasoning_response")
-        if reasoning_critique and previous_reasoning:
+        if reasoning_feedback and previous_reasoning:
             task_text = [
                 "\n====== This is the previous reasoning:",
                 previous_reasoning,
                 "====== This is the end of your previous reasoning.",
-                "\nThis reasoning was critiqued as follows - adapt your reasoning if necessary.",
-                "Only change this existing reasoning according to what was critiqued or what was wrong.",
+                "\nThis reasoning received the following feedback - adapt if necessary.",
+                "Only change this existing reasoning according to the feedback.",
                 "====== This is the feedback:",
-                reasoning_critique,
+                reasoning_feedback,
                 "====== This is the end of the feedback.",
             ]
             task_text.extend([""])
@@ -1448,8 +1502,8 @@ The problem/question that was reasoned about is:
             return ""
         return section_heading + task_text
 
-    def _build_task_list_generation_critique_instructions_section(self, state: 'KaiState') -> str:
-        """This section is made available for critiques in initial planning."""
+    def _build_task_list_generation_evaluation_instructions_section(self, state: 'KaiState') -> str:
+        """This section is made available for task list evaluation in planning."""
         task_text = []
         task_text_old = state.get("task_text_old")
         if task_text_old:
@@ -1462,26 +1516,26 @@ The problem/question that was reasoned about is:
             "\nThis is the current version of the task list:\n",
             task_text_new,
         ])
-        task_list_critique = state.get("task_list_critique")
-        if task_list_critique:
+        task_list_feedback = state.get("task_list_feedback")
+        if task_list_feedback:
             task_text.extend([
-                "\nYou provided the following feedback on the previous version that led to this update:\n",
-                task_list_critique,
+                "\nYou provided the following feedback that led to this update:\n",
+                task_list_feedback,
             ])
         task_text.extend([""])
         task_text = "\n".join(task_text)
         return task_text
 
     def _build_task_list_generation_instructions_section(self, state: 'KaiState') -> str:
-        """This section is made available for initial planning if a critique was given (after the first iteration)."""
-        task_list_critique = state.get("task_list_critique")
-        if task_list_critique:
+        """This section is made available for task generation based on feedback."""
+        task_list_feedback = state.get("task_list_feedback")
+        if task_list_feedback:
             task_text_new = format_task_list(state.get("task_list", {}))
             task_text = [
                 "\nThis is the current version of the task list:\n",
                 task_text_new,
-                "\nThe agent provided the following feedback for this update:\n",
-                task_list_critique,
+                "\nThe evaluator provided the following feedback:\n",
+                task_list_feedback,
                 "\nImprove the current version of the task list based on this feedback.",
             ]
         else:
@@ -1489,8 +1543,8 @@ The problem/question that was reasoned about is:
         task_text = "\n".join(task_text)
         return task_text
 
-    def _build_task_list_update_critique_instructions_section(self, state: 'KaiState') -> str:
-        """Build task list comparison section for autonomous update critique.
+    def _build_task_list_update_evaluation_instructions_section(self, state: 'KaiState') -> str:
+        """Build task list comparison section for task update evaluation.
 
         Uses task_list_backup (the pre-update snapshot) to show the original task list,
         and current task_list for the updated version. This is cleaner than maintaining
@@ -1511,27 +1565,27 @@ The problem/question that was reasoned about is:
                 task_text_old,
                 "\nThis is the draft of the updated task list:\n",
                 task_text_new,
-                "\nThe agent provided the following reasoning for modifying the task list:\n",
+                "\nThe agent provided the following reasoning for modification:\n",
                 task_list_update_rationale,
             ]
-            autonomous_update_critique = state.get("autonomous_update_critique")
-            if autonomous_update_critique:
+            task_update_feedback = state.get("task_update_feedback")
+            if task_update_feedback:
                 task_text.extend([
-                    "\nYou provided the following feedback on the previous version that led to this update:\n",
-                    autonomous_update_critique,
+                    "\nYou provided the following feedback that led to this update:\n",
+                    task_update_feedback,
                 ])
             task_text.extend([""])
             task_text = "\n".join(task_text)
             return task_text
         else:
             return ""
-        
+
     def _build_task_list_update_instructions_section(self, state: 'KaiState') -> str:
-        autonomous_update_critique = state.get("autonomous_update_critique")
+        task_update_feedback = state.get("task_update_feedback")
         task_list_backup = state.get("task_list_backup")
-        if autonomous_update_critique and task_list_backup:
-            # If autonomous_update_critique is set, task_list_backup should also be present
-            # because the critique was performed on an update to an existing task list.
+        if task_update_feedback and task_list_backup:
+            # If task_update_feedback is set, task_list_backup should also be present
+            # because the feedback was on an update to an existing task list.
             task_text_old = format_task_list(task_list_backup)
             task_text_new = format_task_list(state.get("task_list", {}))
             task_text = "\n".join([
@@ -1539,10 +1593,10 @@ The problem/question that was reasoned about is:
                 task_text_old,
                 "\nThis is the draft of the updated task list:\n",
                 task_text_new,
-                "\nThe agent provided the following feedback for this update:\n",
-                "====== This is the start of the quote from the agent:",
-                autonomous_update_critique,
-                "====== This is the end of the quote from the agent.",
+                "\nThe evaluator provided the following feedback:\n",
+                "====== This is the start of the quote from the evaluator:",
+                task_update_feedback,
+                "====== This is the end of the quote from the evaluator.",
                 "",
                 self.PROMPT_BUILDING_BLOCKS['task_list_update_critiqued'],
                 "",
@@ -1748,7 +1802,7 @@ The problem/question that was reasoned about is:
         # Second try: extract from execution_history if there was an error
         last_execution_failed = state.get('last_execution_failed')
         if last_execution_failed:
-            execution_history = state.get('execution_history', [])
+            execution_history = state['execution_history']
             if execution_history:
                 # Get the most recent cell (first in the list, as it's ordered most recent first)
                 most_recent = execution_history[0] if execution_history else None
@@ -1762,6 +1816,31 @@ The problem/question that was reasoned about is:
                     elif isinstance(most_recent, dict):
                         # Dict format from tests
                         return most_recent.get('code', '')
+
+        return ''
+
+    def _get_last_executed_cell(self, state: 'KaiState') -> str:
+        """Get the code of the last executed cell for learning explanations.
+
+        For learning mode, we need the code that was just executed.
+        This comes from execution_history (most recent entry).
+        """
+        # First try: generated_code from current state (may still be set)
+        generated_code = state.get('generated_code')
+        if generated_code:
+            return generated_code
+
+        # Second try: extract from execution_history
+        execution_history = state.get('execution_history', [])
+        if execution_history:
+            most_recent = execution_history[0] if execution_history else None
+            if most_recent:
+                if isinstance(most_recent, str):
+                    cell_content = self._extract_cell_content_from_history_item(most_recent)
+                    if cell_content:
+                        return cell_content
+                elif isinstance(most_recent, dict):
+                    return most_recent.get('code', '')
 
         return ''
 
@@ -1930,7 +2009,6 @@ The problem/question that was reasoned about is:
             PromptScenario.AUTOLOOP_INTENT_CLASSIFICATION: "autoloop_intent_classification",
             PromptScenario.AUTONOMOUS_MARK_COMPLETION: "autonomous_mark_completion",
             PromptScenario.AUTONOMOUS_UPDATE_TASKS: "autonomous_update_tasks",
-            PromptScenario.AUTONOMOUS_UPDATE_CRITIQUE: "autonomous_update_critique",
             PromptScenario.BACKTRACK_RECOVERY: "backtrack_recovery",
             PromptScenario.CELL_SELECTION_ADDITION: "cell_positioning",
             PromptScenario.CELL_SELECTION_REPLACEMENT: "cell_positioning",
@@ -1938,13 +2016,15 @@ The problem/question that was reasoned about is:
             PromptScenario.ERROR_RECOVERY: "error_recovery",
             PromptScenario.EXECUTION_MONITOR: "execution_monitor",
             PromptScenario.INTENT_CLASSIFICATION: "intent_classification",
-            PromptScenario.REASONING_CRITIQUE: "reasoning_critique",
             PromptScenario.REFERENCE_WORKFLOW_SELECTION: "reference_workflow_selection",
             PromptScenario.REFERENCE_WORKFLOW_SELECTION_ONLY: "reference_workflow_selection_only",
             PromptScenario.REFERENCE_WORKFLOW_CELL_SELECTION: "reference_workflow_cell_selection",
             PromptScenario.SECTION_CODE_REVIEW: "section_code_review",
             PromptScenario.TASK_LIST_GENERATION: "task_list_generation",
-            PromptScenario.TASK_LIST_CRITIQUE: "task_list_critique",
+            # New evaluator scenarios (evaluator-optimizer pattern)
+            PromptScenario.TASK_LIST_EVALUATION: "task_list_evaluator",
+            PromptScenario.TASK_UPDATE_EVALUATION: "task_update_evaluator",
+            PromptScenario.REASONING_EVALUATION: "reasoning_evaluator",
         }
         
         schema_key = scenario_to_schema[scenario] if scenario in scenario_to_schema else None

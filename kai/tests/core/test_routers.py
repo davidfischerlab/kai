@@ -75,6 +75,26 @@ class TestRouteDeterministic:
         }
         assert route_deterministic(state) == "complete"
 
+    def test_first_iteration_learning_mode_exits_to_ui(self):
+        """First iteration with learning_mode=True should still exit to UI.
+
+        ARCHITECTURE NOTE: After refactor, learning explanation runs in a
+        SEPARATE graph AFTER code execution, not during routing. The main
+        execution graph is identical regardless of learning_mode.
+        """
+        state = {
+            "task_list": {"tasks": [
+                {"id": 1, "status": "active"},
+                {"id": 2, "status": "pending"},
+            ]},
+            "autonomous_mode_continue": False,
+            "auto_mode_first_execution_done": False,
+            "confirm_plan": True,
+            "learning_mode": True,
+        }
+        # Learning mode no longer affects routing - exits to UI same as non-learning
+        assert route_deterministic(state) == "complete"
+
     def test_first_iteration_has_active_confirm_plan_false_continues(self):
         """First iteration with active task and confirm_plan=False continues to first_execution."""
         state = {
@@ -203,34 +223,34 @@ class TestRouteFirstExecution:
             "positioning_info": {"target_cell": 5},
             "is_reasoning_task": True,
             "reasoning_response": None,
-            "reasoning_approval": None,
-            "reasoning_critique_iteration": 0,
+            "reasoning_grade": None,
+            "reasoning_evaluation_iteration": 0,
         }
         assert route_first_execution(state) == "reasoning_response_with_guidance"
 
-    def test_reasoning_task_response_no_approval_critiques(self):
-        """Reasoning task with response but no approval should critique."""
+    def test_reasoning_task_response_no_grade_evaluates(self):
+        """Reasoning task with response but no grade should evaluate."""
         state = {
             "task_list": {"tasks": [{"id": 1, "status": "active"}]},
             "auto_mode_first_execution_done": False,
             "positioning_info": {"target_cell": 5},
             "is_reasoning_task": True,
             "reasoning_response": "Some reasoning",
-            "reasoning_approval": None,
-            "reasoning_critique_iteration": 0,
+            "reasoning_grade": None,
+            "reasoning_evaluation_iteration": 0,
         }
-        assert route_first_execution(state) == "reasoning_critique"
+        assert route_first_execution(state) == "reasoning_evaluator"
 
-    def test_reasoning_task_modify_regenerates(self):
-        """Reasoning task with MODIFY approval should regenerate."""
+    def test_reasoning_task_rejected_regenerates(self):
+        """Reasoning task with REJECTED grade should regenerate."""
         state = {
             "task_list": {"tasks": [{"id": 1, "status": "active"}]},
             "auto_mode_first_execution_done": False,
             "positioning_info": {"target_cell": 5},
             "is_reasoning_task": True,
             "reasoning_response": "Some reasoning",
-            "reasoning_approval": "MODIFY",
-            "reasoning_critique_iteration": 1,
+            "reasoning_grade": "REJECTED",
+            "reasoning_evaluation_iteration": 1,
         }
         assert route_first_execution(state) == "reasoning_response_with_guidance"
 
@@ -242,8 +262,8 @@ class TestRouteFirstExecution:
             "positioning_info": {"target_cell": 5},
             "is_reasoning_task": True,
             "reasoning_response": "Some reasoning",
-            "reasoning_approval": "APPROVED",
-            "reasoning_critique_iteration": 1,
+            "reasoning_grade": "APPROVED",
+            "reasoning_evaluation_iteration": 1,
         }
         assert route_first_execution(state, mock_send_message) == "mark_reasoning_completed"
 
@@ -255,10 +275,40 @@ class TestRouteFirstExecution:
             "positioning_info": {"target_cell": 5},
             "is_reasoning_task": True,
             "reasoning_response": "Some reasoning",
-            "reasoning_approval": "MODIFY",  # Still not approved
-            "reasoning_critique_iteration": 2,  # Max reached
+            "reasoning_grade": "REJECTED",  # Still not approved
+            "reasoning_evaluation_iteration": 2,  # Max reached
         }
         assert route_first_execution(state, mock_send_message) == "mark_reasoning_completed"
+
+    # --- Learning mode tests (ARCHITECTURE NOTE) ---
+    # After refactor, learning explanation runs in SEPARATE learning graph
+    # AFTER code execution, not during first_execution routing.
+    # The execution graph is identical regardless of learning_mode.
+    # These tests verify learning_mode does NOT affect first_execution routing.
+
+    def test_learning_mode_does_not_affect_first_execution_routing(self):
+        """Learning mode should NOT affect first_execution routing.
+
+        After refactor, learning runs in separate graph after execution.
+        """
+        state = {
+            "task_list": {"tasks": [{"id": 1, "status": "active"}]},
+            "auto_mode_first_execution_done": False,
+            "positioning_info": None,
+            "learning_mode": True,
+        }
+        # Should go straight to positioning regardless of learning_mode
+        assert route_first_execution(state) == "cell_positioning"
+
+    def test_learning_mode_false_goes_to_positioning(self):
+        """When learning mode is off, should go straight to positioning."""
+        state = {
+            "task_list": {"tasks": [{"id": 1, "status": "active"}]},
+            "auto_mode_first_execution_done": False,
+            "positioning_info": None,
+            "learning_mode": False,
+        }
+        assert route_first_execution(state) == "cell_positioning"
 
 
 # =============================================================================
@@ -408,6 +458,64 @@ class TestRouteStandardExecution:
         # Standard continue needs positioning
         assert route_standard_execution(state) == "set_positioning_from_last_cell"
 
+    # =========================================================================
+    # Learning mode tests (ARCHITECTURE NOTE)
+    # =========================================================================
+    # After refactor, learning explanation runs in SEPARATE learning graph
+    # AFTER code execution, not during standard_execution routing.
+    # The execution graph is identical regardless of learning_mode.
+    # These tests verify learning_mode does NOT affect standard_execution routing.
+
+    def test_learning_mode_does_not_affect_standard_execution_routing(self):
+        """Learning mode should NOT affect standard_execution routing.
+
+        After refactor, learning runs in separate graph after execution.
+        """
+        state = {
+            "task_list": {"tasks": [{"id": 1, "status": "active"}]},
+            "task_completion_analyzed": True,
+            "tasks_updated": True,
+            "update_approved": True,
+            "next_task_activated": True,
+            "last_execution_failed": False,
+            "retry_objective": None,
+            "recovery_objective": None,
+            "learning_mode": True,
+        }
+        # Should go to positioning regardless of learning_mode
+        assert route_standard_execution(state) == "set_positioning_from_last_cell"
+
+    def test_learning_mode_disabled_goes_to_positioning(self):
+        """When learning mode is off, should go to positioning."""
+        state = {
+            "task_list": {"tasks": [{"id": 1, "status": "active"}]},
+            "task_completion_analyzed": True,
+            "tasks_updated": True,
+            "update_approved": True,
+            "next_task_activated": True,
+            "last_execution_failed": False,
+            "retry_objective": None,
+            "recovery_objective": None,
+            "learning_mode": False,
+        }
+        # Should go directly to standard_continue branch (positioning)
+        assert route_standard_execution(state) == "set_positioning_from_last_cell"
+
+    def test_learning_mode_does_not_affect_error_handling(self):
+        """Learning mode should NOT affect error handling routing."""
+        state = {
+            "task_list": {"tasks": [{"id": 1, "status": "active"}]},
+            "task_completion_analyzed": True,
+            "tasks_updated": False,  # Skipped in retry
+            "next_task_activated": False,
+            "last_execution_failed": True,  # Error occurred
+            "retry_objective": None,
+            "recovery_objective": None,
+            "learning_mode": True,
+        }
+        # Error path should be the same regardless of learning_mode
+        assert route_standard_execution(state) == "mark_next_task_active"
+
 
 # =============================================================================
 # route_standard_continue_branch tests
@@ -488,8 +596,8 @@ class TestRouteStandardRetryBranch:
             "positioning_info": {"target_cell": 5},
             "active_task_objective": "[reasoning] Explain something",
             "reasoning_response": None,
-            "reasoning_approval": None,
-            "reasoning_critique_iteration": 0,
+            "reasoning_grade": None,
+            "reasoning_evaluation_iteration": 0,
         }
         assert route_standard_retry_branch(state) == "reasoning_response_with_guidance"
 
@@ -500,8 +608,8 @@ class TestRouteStandardRetryBranch:
             "positioning_info": {"target_cell": 5},
             "active_task_objective": "[reasoning] Explain something",
             "reasoning_response": "Some reasoning",
-            "reasoning_approval": "MODIFY",
-            "reasoning_critique_iteration": 2,  # Max reached
+            "reasoning_grade": "REJECTED",
+            "reasoning_evaluation_iteration": 2,  # Max reached
         }
         assert route_standard_retry_branch(state, mock_send_message) == "mark_reasoning_completed"
 
@@ -653,16 +761,16 @@ class TestRoutePlanningPhase:
         }
         assert route_planning_phase(state, max_task_planning_iterations=10) == "workflow_refinement"
 
-    def test_task_planning_without_rag_critique_enabled_critiques(self):
-        """Task planning without RAG but critique enabled should critique."""
+    def test_task_planning_without_rag_evaluation_enabled_evaluates(self):
+        """Task planning without RAG but evaluation enabled should evaluate."""
         state = {
             "planning_phase": "task_planning",
             "task_planning_iteration": 1,
             "rag_enabled": False,
             "use_critique": True,
-            "task_list_approval": None,
+            "task_list_grade": None,
         }
-        assert route_planning_phase(state, max_task_planning_iterations=10) == "task_list_critique"
+        assert route_planning_phase(state, max_task_planning_iterations=10) == "task_list_evaluator"
 
     def test_task_planning_approved_completes(self):
         """Task planning with approval should complete."""
@@ -671,7 +779,7 @@ class TestRoutePlanningPhase:
             "task_planning_iteration": 1,
             "rag_enabled": False,
             "use_critique": True,
-            "task_list_approval": "APPROVED",
+            "task_list_grade": "APPROVED",
         }
         assert route_planning_phase(state, max_task_planning_iterations=10) == "complete"
 
@@ -693,28 +801,28 @@ class TestRoutePlanningPhase:
         }
         assert route_planning_phase(state, max_task_planning_iterations=10) == "filter_and_complete"
 
-    def test_critique_approved_completes(self):
-        """After critique with approval should complete."""
+    def test_evaluation_approved_completes(self):
+        """After evaluation with approval should complete."""
         state = {
-            "planning_phase": "task_list_critique",
-            "task_list_approval": "APPROVED",
+            "planning_phase": "task_list_evaluation",
+            "task_list_grade": "APPROVED",
             "rag_enabled": False,
         }
         assert route_planning_phase(state) == "complete"
 
-    def test_critique_rejected_increments(self):
-        """After critique with rejection should increment."""
+    def test_evaluation_rejected_increments(self):
+        """After evaluation with rejection should increment."""
         state = {
-            "planning_phase": "task_list_critique",
-            "task_list_approval": "MODIFY",
+            "planning_phase": "task_list_evaluation",
+            "task_list_grade": "REJECTED",
         }
         assert route_planning_phase(state) == "increment_task_planning_iteration"
 
-    def test_critique_no_result_completes_anyway(self):
-        """After critique with no result should complete anyway."""
+    def test_evaluation_no_result_completes_anyway(self):
+        """After evaluation with no result should complete anyway."""
         state = {
-            "planning_phase": "task_list_critique",
-            "task_list_approval": None,
+            "planning_phase": "task_list_evaluation",
+            "task_list_grade": None,
             "rag_enabled": False,
         }
         assert route_planning_phase(state) == "complete"
@@ -727,14 +835,14 @@ class TestRoutePlanningPhase:
         }
         assert route_planning_phase(state) == "increment_task_planning_iteration"
 
-    def test_workflow_refinement_no_queries_critiques(self):
-        """After workflow refinement without queries should critique."""
+    def test_workflow_refinement_no_queries_evaluates(self):
+        """After workflow refinement without queries should evaluate."""
         state = {
             "planning_phase": "workflow_refinement",
             "had_retrieval_queries_before_refinement": False,
             "use_critique": True,
         }
-        assert route_planning_phase(state) == "task_list_critique"
+        assert route_planning_phase(state) == "task_list_evaluator"
 
     def test_workflow_refinement_no_queries_no_critique_completes(self):
         """After refinement without queries and no critique should complete."""
