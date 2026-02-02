@@ -1425,7 +1425,19 @@
                         toggleBtn.title = explanationsExpanded ? 'Collapse previous explanations' : 'Show all explanations';
                         toggleBtn.onclick = () => {
                             explanationsExpanded = !explanationsExpanded;
-                            updateMessages(messages); // Re-render
+                            // Directly toggle DOM - no re-render delay
+                            const allExplanations = document.querySelectorAll('.message.learning-explanation');
+                            const lastIdx = allExplanations.length - 1;
+                            allExplanations.forEach((el, i) => {
+                                if (i < lastIdx) {
+                                    el.classList.toggle('collapsed', !explanationsExpanded);
+                                }
+                            });
+                            // Update all toggle buttons
+                            document.querySelectorAll('.explanation-toggle').forEach(btn => {
+                                btn.innerHTML = explanationsExpanded ? '▲' : '▼';
+                                btn.title = explanationsExpanded ? 'Collapse previous explanations' : 'Show all explanations';
+                            });
                         };
                         headerDiv.appendChild(toggleBtn);
 
