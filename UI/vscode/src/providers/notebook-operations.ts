@@ -426,6 +426,13 @@ export class NotebookOperations extends NotebookHistoryTracker {
     }
 
     /**
+     * Get the currently tracked notebook document.
+     */
+    public getTrackedNotebook(): vscode.NotebookDocument | undefined {
+        return this._trackedNotebook;
+    }
+
+    /**
      * Get notebook editor - prefers active editor, falls back to tracked notebook.
      * Use this instead of vscode.window.activeNotebookEditor to handle cases where
      * another tab (e.g., a code file) is focused but the notebook is still visible.

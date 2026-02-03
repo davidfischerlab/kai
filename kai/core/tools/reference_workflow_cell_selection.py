@@ -4,10 +4,12 @@ This module provides schema and tool for selecting relevant cells from
 reference workflows, optimized to reuse filtered content for unchanged workflows.
 """
 
+from pathlib import Path
 from typing import List, TYPE_CHECKING
 
 from pydantic import BaseModel, Field, ConfigDict
 
+from kai.config.paths import BIOINFORMATICS_CACHE_DIR
 from kai.core.prompt_manager import PromptScenario
 from kai.core.tools.base import ToolResult, ToolOutputType
 from kai.core.tools.prompt_base import StructuredPromptTool
@@ -142,8 +144,59 @@ class ReferenceWorkflowCellSelectionTool(StructuredPromptTool):
             if results:
                 results.sort(key=lambda x: x[0])
                 bullet_list = "\n".join([f"📚 {full_id} (considering {percentage:.0f}% of file)" for full_id, percentage in results])
+
+                # Build structured notebook data for UI cards (same as main path)
+                # This ensures reference notebooks are always shown above task list
+                previous_cell_indices = state.get("reference_workflow_cell_indices", {})
+                notebooks_structured = []
+                for full_id, percentage in results:
+                    internal_id = full_to_internal.get(full_id)
+                    if internal_id and internal_id in all_notebooks:
+                        notebook_data = all_notebooks[internal_id]
+                        metadata = notebook_data.get("metadata", {})
+                        cells = notebook_data.get("cells", [])
+
+                        # Get previously selected cell indices
+                        selected_cell_indices = previous_cell_indices.get(full_id, [])
+
+                        # Build cell previews
+                        cell_previews = []
+                        for cell in cells:
+                            cell_idx = cell.get("order")
+                            if cell_idx in selected_cell_indices:
+                                content = cell.get("content", "")
+                                first_line = content.split('\n')[0][:60] if content else ""
+                                cell_previews.append({
+                                    "index": cell_idx,
+                                    "type": cell.get("type", "code"),
+                                    "preview": first_line + ("..." if len(content.split('\n')[0]) > 60 else "")
+                                })
+
+                        displayed_cells = cell_previews[:5]
+                        remaining_count = len(cell_previews) - 5 if len(cell_previews) > 5 else 0
+
+                        # Resolve source_path
+                        relative_source_path = metadata.get("source_path", "")
+                        absolute_source_path = ""
+                        if relative_source_path:
+                            candidate_path = BIOINFORMATICS_CACHE_DIR / relative_source_path
+                            if candidate_path.exists():
+                                absolute_source_path = str(candidate_path)
+
+                        notebooks_structured.append({
+                            "id": full_id,
+                            "title": metadata.get("title", full_id.split("/")[-1]),
+                            "source_path": absolute_source_path,
+                            "percentage": percentage,
+                            "cells": displayed_cells,
+                            "more_cells_count": remaining_count
+                        })
+
                 return ToolResult(
-                    output_ui={"text": bullet_list},
+                    output_ui={
+                        "text": bullet_list,
+                        "notebooks": notebooks_structured,  # Include structured data for UI
+                    },
                     output_workflow={},  # No updates
                     output_type=ToolOutputType.REFERENCE_WORKFLOWS
                 )
@@ -194,24 +247,40 @@ class ReferenceWorkflowCellSelectionTool(StructuredPromptTool):
 
         # Build percentages dict combining kept and new
         percentages_dict = {}
+        cell_indices_dict = {}  # Store selected cell indices for UI
         results = []
 
-        # Add kept workflows with their previous percentages
+        # Get previous cell indices (for kept workflows)
+        previous_cell_indices = state.get("reference_workflow_cell_indices", {})
+
+        # Add kept workflows with their previous percentages and cell indices
+        # Only keep workflows that have actual cell indices (0 cells = no educational value)
         for internal_id in kept_ids:
             full_id = internal_to_full.get(internal_id)
             if full_id and full_id in previous_percentages:
+                # Skip workflows without cell data - they have no educational value
+                if full_id not in previous_cell_indices or not previous_cell_indices[full_id]:
+                    continue
                 percentage = previous_percentages[full_id]
                 percentages_dict[full_id] = percentage
                 results.append((full_id, percentage))
+                cell_indices_dict[full_id] = previous_cell_indices[full_id]
 
         # Add new workflows with calculated percentages
+        # Only include workflows with at least 1 selected cell (0 cells = no educational value)
         excluded_workflows = []
         for internal_id in new_ids:
             if internal_id in all_notebooks:
                 full_id = internal_to_full.get(internal_id)
                 notebook_data = all_notebooks[internal_id]
                 total_cells = len(notebook_data.get("cells", []))
-                selected_cells = len(selected_ranges.get(internal_id, []))
+                selected_cells_list = selected_ranges.get(internal_id, [])
+                selected_cells = len(selected_cells_list)
+
+                # Skip workflows with no selected cells - they have no educational value
+                if selected_cells == 0:
+                    excluded_workflows.append(internal_id)
+                    continue
 
                 if total_cells > 0:
                     percentage = min((selected_cells / total_cells * 100), 100)
@@ -219,15 +288,60 @@ class ReferenceWorkflowCellSelectionTool(StructuredPromptTool):
                     percentage = 0
 
                 percentages_dict[full_id] = percentage
+                cell_indices_dict[full_id] = selected_cells_list  # Store cell indices
                 results.append((full_id, percentage))
-
-                # Track empty selections
-                if selected_cells == 0:
-                    excluded_workflows.append(internal_id)
 
         # Sort and format UI message
         results.sort(key=lambda x: x[0])
         bullet_list = "\n".join([f"📚 {full_id} (considering {percentage:.0f}% of file)" for full_id, percentage in results])
+
+        # Build structured notebook data for UI (reference notebook cards)
+        notebooks_structured = []
+        for full_id, percentage in results:
+            internal_id = full_to_internal.get(full_id)
+            if internal_id and internal_id in all_notebooks:
+                notebook_data = all_notebooks[internal_id]
+                metadata = notebook_data.get("metadata", {})
+                cells = notebook_data.get("cells", [])
+
+                # Get selected cell indices for this notebook (from cell_indices_dict which has both new and kept)
+                selected_cell_indices = cell_indices_dict.get(full_id, [])
+
+                # Build cell previews (first line of each selected cell)
+                cell_previews = []
+                for cell in cells:
+                    cell_idx = cell.get("order")
+                    if cell_idx in selected_cell_indices:
+                        content = cell.get("content", "")
+                        # First non-empty line as preview (max 60 chars)
+                        first_line = content.split('\n')[0][:60] if content else ""
+                        cell_previews.append({
+                            "index": cell_idx,
+                            "type": cell.get("type", "code"),
+                            "preview": first_line + ("..." if len(content.split('\n')[0]) > 60 else "")
+                        })
+
+                # Limit to first 5 cells for UI, track if more exist
+                displayed_cells = cell_previews[:5]
+                remaining_count = len(cell_previews) - 5 if len(cell_previews) > 5 else 0
+
+                # Resolve source_path: convert relative path to absolute and check existence
+                relative_source_path = metadata.get("source_path", "")
+                absolute_source_path = ""
+                if relative_source_path:
+                    # source_path is stored relative to cache_base_path (BIOINFORMATICS_CACHE_DIR)
+                    candidate_path = BIOINFORMATICS_CACHE_DIR / relative_source_path
+                    if candidate_path.exists():
+                        absolute_source_path = str(candidate_path)
+
+                notebooks_structured.append({
+                    "id": full_id,
+                    "title": metadata.get("title", full_id.split("/")[-1]),
+                    "source_path": absolute_source_path,  # Absolute path to .ipynb file, or empty if not found
+                    "percentage": percentage,
+                    "cells": displayed_cells,
+                    "more_cells_count": remaining_count  # How many cells are not shown
+                })
 
         # Log cell selection results for production visibility
         num_new = len(new_content_dict)
@@ -246,10 +360,14 @@ class ReferenceWorkflowCellSelectionTool(StructuredPromptTool):
             logger.debug(f"Excluded {len(excluded_workflows)} workflows with 0 cells selected: {excluded_workflows}")
 
         return ToolResult(
-            output_ui={"text": bullet_list},
+            output_ui={
+                "text": bullet_list,
+                "notebooks": notebooks_structured,  # Structured data for UI cards
+            },
             output_workflow={
                 "reference_workflow_content": merged_content_dict,  # Dict format
                 "reference_workflow_percentages": percentages_dict,
+                "reference_workflow_cell_indices": cell_indices_dict,  # Selected cell indices per workflow
                 "excluded_workflows": excluded_workflows,
             },
             output_type=ToolOutputType.REFERENCE_WORKFLOWS

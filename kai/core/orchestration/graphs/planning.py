@@ -41,7 +41,7 @@ def build_planning_subgraph(
         "search_workflows",
         "workflow_refinement",
         "task_list_generation",
-        "task_list_critique",
+        "task_list_evaluator",
     ]
 
     for name in planning_tools:

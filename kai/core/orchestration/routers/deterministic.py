@@ -71,6 +71,9 @@ def route_deterministic(
             logger.debug(
                 f"[DET ROUTER] FIRST_ITER: task active, confirm_plan={confirm_plan}"
             )
+
+            # In VSCode mode (confirm_plan=True), exit to show user the plan first
+            # In Jupyter mode (confirm_plan=False), continue directly to execution
             if confirm_plan:
                 logger.debug(
                     "[DET ROUTER] FIRST_ITER: exiting to show user (VSCode) → complete"
@@ -78,7 +81,7 @@ def route_deterministic(
                 return "complete"
             else:
                 logger.debug(
-                    "[DET ROUTER] FIRST_ITER: continuing to first execution (Jupyter)"
+                    "[DET ROUTER] FIRST_ITER: continuing to first execution"
                 )
         else:
             logger.debug("[DET ROUTER] FIRST_ITER: no tasks active or pending → complete")

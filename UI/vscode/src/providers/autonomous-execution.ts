@@ -53,6 +53,10 @@ export class AutonomousExecution {
     private _lastExecutionOutput: string = "";
     private _lastCellModifiedInAutoMode: number = -1;
 
+    // Track whether code was actually executed in current iteration
+    // Used to prevent learning explanation from showing after planning phase
+    private _executionOccurredThisIteration: boolean = false;
+
     // Pending feedback from interruption
     private _pendingInterruptFeedback: string | null = null;
 
@@ -66,6 +70,9 @@ export class AutonomousExecution {
     private _waitingForWorkflowCompletion: boolean = false;
     private _workflowCompletionPromise: Promise<void> | null = null;
     private _workflowCompletionResolver: (() => void) | null = null;
+
+    // Flag to prevent duplicate feedback messages in guided/learning mode
+    private _checkpointShown: boolean = false;
 
     constructor(
         private agentProvider: KaiAgentProvider,
@@ -85,7 +92,7 @@ export class AutonomousExecution {
 
     /**
      * Called by ChatViewProvider when Python sends workflow state updates.
-     * States: LOOP_COMPLETE, LOOP_INCOMPLETE, LOOP_INCOMPLETE_REQUIRE_FEEDBACK
+     * States: LOOP_COMPLETE, LOOP_INCOMPLETE
      * @see ChatViewProvider._handleMessage() for state routing
      */
     setWorkflowState(state: string) {
@@ -103,6 +110,7 @@ export class AutonomousExecution {
             this._feedbackResolver = null;
             this._feedbackPromise = null;
             this._waitingForFeedback = false;
+            this.updateAutoModeButton(); // Update UI back to running state
         }
     }
 
@@ -136,19 +144,15 @@ export class AutonomousExecution {
 
     public async runAutonomousLoop(initialMessage: string, initialContext: any): Promise<void> {
         /**
-         * Unified autonomous execution loop with mid-iteration feedback support.
+         * Unified autonomous execution loop.
          *
          * Flow:
          * 1. Send message to Python (planning or execution)
-         * 2. Python processes and may return LOOP_INCOMPLETE_REQUIRE_FEEDBACK
-         * 3. If feedback needed, pause THIS iteration and wait for user input
-         * 4. Continue same iteration with feedback (via continue statement)
-         * 5. Only advance to next iteration when Python completes current one
-         *
-         * Key insight: Feedback continues the SAME iteration, not a new one.
+         * 2. Python processes and returns LOOP_INCOMPLETE or LOOP_COMPLETE
+         * 3. VSCode pauses in guided/learning mode after task completion
+         * 4. User clicks Continue → next iteration starts
          *
          * @see handleAutonomousPlanning() in agent-provider.ts
-         * @see _handle_autonomous_unified() in workflow_orchestrator.py
          */
         try {
             this._autonomousMode = true;
@@ -174,60 +178,55 @@ export class AutonomousExecution {
             // Reset task tracking for new session to ensure fresh bubble
             this.chatCore.resetTaskTracking();
 
-            // Show initial processing message
-            this.chatCore.addMessage('assistant', 'Starting autonomous mode...', true, false);
+            // Show activity indicator
+            this.chatCore.showIndicator('thinking');
 
             let currentMessage = initialMessage;
             let context = await this.chatCore.getContextForMessage(initialMessage);
             context.autonomousMode = true;
-            context.autonomousModeContinue = false;
+            context.autonomousModeContinue = false;  // First iteration - triggers planning
             context.lastExecutionFailed = this._lastExecutionFailed;
             context.errorCellIndex = this._errorCellIndex;
             context.executionResult = this._lastExecutionOutput;
             context.lastCellModifiedInAutoMode = this._lastCellModifiedInAutoMode;
 
-            // Main autonomous loop - with feedback support
+            let isFirstIteration = true;  // Track if this is the very first call
+
+            // Main autonomous loop
             while (this._autonomousMode) {
-                if(this._currentWorkflowState === "LOOP_INCOMPLETE_REQUIRE_FEEDBACK") {
-                    // Pause and wait for user feedback.
-                    // This creates a synchronous pause point where the loop waits for
-                    // user input via provideFeedback() called from ChatViewProvider.
-                    this.chatCore.addMessage('assistant', 'Please provide feedback to proceed.', false, false);
-                    currentMessage = await this.waitForUserFeedback();
-                    context.autonomousModeContinue = false;
-                } else if (this._currentWorkflowState === "LOOP_INCOMPLETE_FEEDBACK_INTERRUPT") {
-                    // Handle feedback interrupt case where user provided feedback
-                    // At this point, the interrupted iteration (last iteration) finished.
-                    // Outputs were filtered after interruption, so we have to re-enable processing:
+                // Reset execution flag at start of each iteration
+                // This ensures learning explanation only triggers after actual code execution
+                this._executionOccurredThisIteration = false;
+
+                // Handle feedback interrupt case (user typed during execution)
+                if (this._currentWorkflowState === "LOOP_INCOMPLETE_FEEDBACK_INTERRUPT") {
                     this.agentProvider.resumeToolOutputProcessing();
-                    // And provide the feedback message for this iteration:
                     currentMessage = this._pendingInterruptFeedback || "";
-                    this._pendingInterruptFeedback = null; // Clear after use
+                    this._pendingInterruptFeedback = null;
                     context.autonomousModeContinue = false;
-                } else {
+                } else if (!isFirstIteration) {
+                    // Only set to true on subsequent iterations (after first planning call)
                     context.autonomousModeContinue = true;
                 }
+                // On first iteration, autonomousModeContinue stays false (set above)
 
                 // Start waiting for workflow completion signal before sending message
                 const workflowCompletionPromise = this.waitForWorkflowCompletion();
 
                 // This function returns once workflow has returned.
-                // Tool outputs are come in through separate channel and are caught below.
+                // Tool outputs come in through separate channel.
                 await this.agentProvider.handleAutonomousIteration(currentMessage, context);
+
+                // After first iteration completes, mark it so subsequent calls use autonomousModeContinue=true
+                isFirstIteration = false;
 
                 // Check if stop was requested during the agent call
                 if (!this._autonomousMode) {
-                    console.log('🛑 Autonomous mode stopped during iteration');
                     break;
                 }
 
-                // Workflow iteration completion checks
-                // 1. Wait for workflow iteration completion signal (auto_loop_update)
-                // This ensures that all messages have been queued, 
-                // ie. that the following check tests all messages that belong to a worflow.
+                // Wait for workflow completion and pending messages
                 await workflowCompletionPromise;
-                // 2. Wait for all pending messages (execute_code, display, etc.) to complete
-                // This ensures cell creation/execution finishes before advancing to next iteration.
                 while (this.agentProvider.hasPendingMessages()) {
                     await new Promise(resolve => setTimeout(resolve, 100));
                 }
@@ -237,14 +236,86 @@ export class AutonomousExecution {
                     break;
                 }
 
-                // Only advance to next iteration when Python completes the iteration
-                if (this._autonomousMode) {
-                    // Continue with empty message (execution mode)
-                    currentMessage = ""; // Reset to empty for continuation
+                // Pause conditions for Tutorial (guided) mode:
+                // - If code execution succeeded → show learning explanation and pause for continue
+                // - If code execution failed → skip pause, continue to retry loop automatically
+                // - If no code was executed (e.g., planning phase) → skip pause
+                //
+                // VSCode decides whether to pause based on:
+                // 1. Learning mode is enabled (chatCore.learningMode)
+                // 2. Code was actually executed this iteration (_executionOccurredThisIteration)
+                // 3. Execution succeeded (!_lastExecutionFailed)
+                const isLearningModeEnabled = this.chatCore.learningMode;
+                const codeWasExecuted = this._executionOccurredThisIteration;
+                const executionSucceeded = !this._lastExecutionFailed;
+
+                // Pause and show learning explanation if:
+                // - Learning mode is enabled AND
+                // - Code was actually executed (not just planning) AND
+                // - Execution succeeded
+                const shouldPauseForLearning = isLearningModeEnabled && codeWasExecuted && executionSucceeded;
+
+                if (isLearningModeEnabled && codeWasExecuted && !executionSucceeded) {
+                    console.log('[KAI] Skipping learning pause - execution failed, continuing to retry');
+                } else if (isLearningModeEnabled && !codeWasExecuted) {
+                    console.log('[KAI] Skipping learning pause - no code executed this iteration (planning phase)');
+                }
+
+                if (shouldPauseForLearning) {
+                    this.chatCore.taskJustCompleted = false;
+
+                    // Request learning explanation from Python now that we know execution succeeded
+                    // Keep indicator showing while waiting for the explanation
+                    if (!this._checkpointShown) {
+                        console.log('[KAI] Requesting learning explanation after successful execution');
+                        // CRITICAL: Update context with the ACTUAL execution output before sending
+                        // The context was built before execution, so executionResult would be stale
+                        context.executionResult = this._lastExecutionOutput;
+                        console.log('[KAI] Learning explanation executionResult length:', context.executionResult?.length || 0);
+                        console.log('[KAI] Learning explanation executionResult preview:', context.executionResult?.substring(0, 200) || '(empty)');
+                        // Request learning explanation from Python - this sends the explanation via display message
+                        await this.agentProvider.requestLearningExplanation(context);
+                        // Wait for any pending messages (the learning explanation)
+                        while (this.agentProvider.hasPendingMessages()) {
+                            await new Promise(resolve => setTimeout(resolve, 100));
+                        }
+                    }
+
+                    // Hide activity indicator now that learning explanation is ready
+                    this.chatCore.hideIndicator();
+
+                    // Add checkpoint (continue button) after learning explanation
+                    if (!this._checkpointShown) {
+                        this.chatCore.addMessage('assistant', '', false, false, {isCheckpoint: true});
+                        this._checkpointShown = true;
+                    }
+
+                    this._waitingForFeedback = true;
+                    this.updateAutoModeButton();
+                    currentMessage = await this.waitForUserFeedback();
+                    this._checkpointShown = false;
+
+                    // Show activity indicator when continuing
+                    this.chatCore.showIndicator('thinking');
+
+                    // Rebuild context with latest execution state before continuing
                     context = await this.chatCore.getContextForMessage(currentMessage);
                     context.autonomousMode = true;
+                    context.lastExecutionFailed = this._lastExecutionFailed;
+                    context.errorCellIndex = this._errorCellIndex;
+                    context.executionResult = this._lastExecutionOutput;
+                    context.lastCellModifiedInAutoMode = this._lastCellModifiedInAutoMode;
+                    // autonomousModeContinue will be set at top of loop
+                    continue; // Go back to loop start with feedback
+                } else if (this.chatCore.taskJustCompleted) {
+                    this.chatCore.taskJustCompleted = false;
+                }
 
-                    // Add error context for autonomous execution
+                // Continue to next iteration
+                if (this._autonomousMode) {
+                    currentMessage = "";
+                    context = await this.chatCore.getContextForMessage(currentMessage);
+                    context.autonomousMode = true;
                     context.lastExecutionFailed = this._lastExecutionFailed;
                     context.errorCellIndex = this._errorCellIndex;
                     context.executionResult = this._lastExecutionOutput;
@@ -256,6 +327,7 @@ export class AutonomousExecution {
             this.terminateAutonomousExecution();
 
         } catch (error: any) {
+            console.log('[KAI ERROR] Autonomous loop error:', error?.message || error);
             console.error('Error in autonomous loop:', error);
             this.terminateAutonomousExecution();
         }
@@ -277,6 +349,7 @@ export class AutonomousExecution {
         this._waitingForFeedback = false;
         this._currentWorkflowState = "";
         this._pendingInterruptFeedback = null;
+        this._checkpointShown = false;
         if (this._feedbackResolver) {
             this._feedbackResolver("");  // Resolve with empty string to break waiting
             this._feedbackResolver = null;
@@ -293,6 +366,9 @@ export class AutonomousExecution {
 
         // Clear tracked notebook reference
         this.notebookOps.setTrackedNotebook(undefined);
+
+        // Hide activity indicator
+        this.chatCore.hideIndicator();
 
         // Update UI immediately
         this.updateAutoModeButton();
@@ -342,7 +418,16 @@ export class AutonomousExecution {
     }
     
     public async handleAutonomousCodeExecution(codeResponse: any): Promise<void> {
+        // Safety check: don't process if waiting for feedback
+        if (this._waitingForFeedback) {
+            console.log('🛑 Skipping code execution - waiting for user feedback');
+            return;
+        }
+
         try {
+            // Switch indicator to show we're working in Jupyter
+            this.chatCore.showIndicator('working in jupyter notebook');
+
             // Check if this is a cell deletion response
             if (codeResponse.vscode_commands) {
                 console.log('🗑️ Processing cell deletion commands');
@@ -413,8 +498,13 @@ export class AutonomousExecution {
                 console.log('Markdown cell added:', cellNumber);
                 this._errorCellIndex = -1;
                 this._lastExecutionFailed = false;
-                this._lastExecutionOutput = ""; // Markdown cells have no output
+                this._lastExecutionOutput = ""; // Markdown cells have no output (content is in last_executed_cell)
+                // Markdown cells (reasoning steps) should also trigger learning explanations
+                this._executionOccurredThisIteration = true;
             } else {
+                // Code cell was executed - mark this so learning explanation can trigger
+                this._executionOccurredThisIteration = true;
+
                 // Check if cell was terminated by execution monitor
                 const wasTerminated = this.notebookOps.lastTerminatedCellIndex === notebookCell.index;
 
@@ -444,8 +534,18 @@ export class AutonomousExecution {
                 }
             }
             this._lastCellModifiedInAutoMode = notebookCell.index;
+
+            // Switch indicator back to thinking (Python will continue processing)
+            // But not if we're waiting for user feedback
+            if (!this._waitingForFeedback) {
+                this.chatCore.showIndicator('thinking');
+            }
         } catch (error) {
             console.error('Error in autonomous code execution:', error);
+            // On error, show thinking indicator only if not waiting for feedback
+            if (!this._waitingForFeedback) {
+                this.chatCore.showIndicator('thinking');
+            }
         }
     }
     

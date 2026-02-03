@@ -100,9 +100,9 @@ def create_base_state(
 
         # Reasoning
         "reasoning_response": None,
-        "reasoning_approval": None,
-        "reasoning_critique": None,
-        "reasoning_critique_iteration": 0,
+        "reasoning_grade": None,
+        "reasoning_feedback": None,
+        "reasoning_evaluation_iteration": 0,
 
         # RAG/Workflow
         "rag_enabled": False,
@@ -133,12 +133,12 @@ def create_base_state(
         "auto_mode_first_execution_done": False,
         "confirm_plan": False,
 
-        # Critique loop state
+        # Evaluation loop state
         "task_list_backup": None,
         "task_list_update_rule": None,
-        "autonomous_update_critique_iteration": 0,
-        "autonomous_update_approval": None,
-        "task_list_approval": None,
+        "task_update_evaluation_iteration": 0,
+        "task_update_grade": None,
+        "task_list_grade": None,
 
         # Planning state
         "planning_phase": None,

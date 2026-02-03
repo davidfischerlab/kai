@@ -9,3 +9,4 @@ from .execution import (
 )
 from .regular import build_regular_subgraph
 from .section_execution import build_section_execution_subgraph
+from .learning import build_learning_graph

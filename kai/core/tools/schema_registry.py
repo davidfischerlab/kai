@@ -11,10 +11,8 @@ Usage:
 
 # Import schemas from individual tool files
 from kai.core.tools.task_list_generation import TaskListGeneration
-from kai.core.tools.task_list_critique import TaskListCritique
 from kai.core.tools.autonomous_mark_completion import AutonomousMarkCompletion
 from kai.core.tools.autonomous_update_tasks import AutonomousTaskUpdate
-from kai.core.tools.autonomous_update_critique import AutonomousUpdateCritique
 
 from kai.core.tools.intent_classification import IntentClassification
 from kai.core.tools.autoloop_intent_classification import AutoLoopIntentClassification
@@ -26,8 +24,6 @@ from kai.core.tools.error_recovery import ErrorRecoveryStrategy
 from kai.core.tools.backtrack_recovery import BacktrackRecoveryStrategy
 from kai.core.tools.execution_monitor import ExecutionMonitor
 
-from kai.core.tools.reasoning_critique import ReasoningCritique
-
 from kai.core.tools.reference_workflow_selection import (
     ReferenceWorkflowSelection,
     ReferenceWorkflowSelectionOnly,
@@ -36,15 +32,18 @@ from kai.core.tools.reference_workflow_cell_selection import (
     ReferenceWorkflowCellSelection,
 )
 
+# Evaluator schemas (evaluator-optimizer pattern)
+from kai.core.tools.task_list_evaluator import TaskListEvaluation
+from kai.core.tools.task_update_evaluator import TaskUpdateEvaluation
+from kai.core.tools.reasoning_evaluator import ReasoningEvaluation
+
 
 # Schema registry for easy lookup by tool name
 SCHEMA_REGISTRY = {
     # Task tools
     "task_list_generation": TaskListGeneration,
-    "task_list_critique": TaskListCritique,
     "autonomous_mark_completion": AutonomousMarkCompletion,
     "autonomous_update_tasks": AutonomousTaskUpdate,
-    "autonomous_update_critique": AutonomousUpdateCritique,
 
     # Intent/classification tools
     "intent_classification": IntentClassification,
@@ -60,11 +59,13 @@ SCHEMA_REGISTRY = {
     "backtrack_recovery": BacktrackRecoveryStrategy,
     "execution_monitor": ExecutionMonitor,
 
-    # Reasoning tools
-    "reasoning_critique": ReasoningCritique,
-
     # Workflow tools
     "reference_workflow_selection": ReferenceWorkflowSelection,
     "reference_workflow_selection_only": ReferenceWorkflowSelectionOnly,
     "reference_workflow_cell_selection": ReferenceWorkflowCellSelection,
+
+    # Evaluator tools (evaluator-optimizer pattern)
+    "task_list_evaluator": TaskListEvaluation,
+    "task_update_evaluator": TaskUpdateEvaluation,
+    "reasoning_evaluator": ReasoningEvaluation,
 }

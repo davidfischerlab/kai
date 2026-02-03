@@ -38,6 +38,20 @@ class TestTransientStateDefaults:
         assert defaults["last_execution_failed"] is None
         assert defaults["retry_objective"] is None
 
+    def test_learning_explanation_done_removed_from_transient_fields(self):
+        """Verify learning_explanation_done is NOT in transient defaults.
+
+        ARCHITECTURE NOTE: After refactor, learning explanation runs in a
+        SEPARATE learning graph AFTER code execution, not during the main
+        execution graph. Therefore, we don't need a transient flag.
+        """
+        defaults = get_transient_defaults()
+
+        # learning_explanation_done should NOT be in transient fields
+        assert "learning_explanation_done" not in defaults, (
+            "learning_explanation_done was removed - learning runs in separate graph"
+        )
+
     def test_transient_field_names_match_defaults(self):
         """Verify TRANSIENT_FIELD_NAMES matches get_transient_defaults keys."""
         defaults = get_transient_defaults()
@@ -128,8 +142,8 @@ class TestIncomingContextPreservation:
         # Should have defaults for all transient fields
         assert incoming_state["last_execution_failed"] is None
         assert incoming_state["retry_objective"] is None
-        assert incoming_state["reasoning_critique_iteration"] == 0
-        assert incoming_state["autonomous_update_critique_iteration"] == 0
+        assert incoming_state["reasoning_evaluation_iteration"] == 0
+        assert incoming_state["task_update_evaluation_iteration"] == 0
         assert incoming_state["task_completion_analyzed"] is False
 
 

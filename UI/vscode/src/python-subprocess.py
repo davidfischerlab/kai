@@ -218,6 +218,33 @@ async def main():
                     print(json.dumps({"type": "stop_autonomous_response", "request_id": request["request_id"], "result": result}))
                     sys.stdout.flush()
 
+                elif request.get("type") == "request_learning_explanation":
+                    # Handle learning explanation request from VSCode
+                    # This is called AFTER VSCode confirms execution succeeded
+                    async def handle_learning_explanation():
+                        nonlocal agent, agent_initialized, agent_initializing
+
+                        # Wait for initialization if in progress
+                        while agent_initializing and not agent_initialized:
+                            await asyncio.sleep(0.1)
+
+                        if agent is not None:
+                            context = request.get("context", {})
+                            # Route through agent for consistent context translation
+                            await agent.run_learning_explanation(context)
+
+                        # Send completion response
+                        print(json.dumps({
+                            "type": "learning_explanation_complete",
+                            "request_id": request["request_id"]
+                        }))
+                        sys.stdout.flush()
+
+                    # Create task and track it
+                    task = asyncio.create_task(handle_learning_explanation())
+                    active_tasks.add(task)
+                    task.add_done_callback(active_tasks.discard)
+
                 elif request.get("type") == "execution_progress_check":
                     # Handle execution progress monitoring as a concurrent task
                     # This allows monitoring to happen while autonomous execution is ongoing

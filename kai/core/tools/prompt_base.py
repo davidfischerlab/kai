@@ -585,6 +585,7 @@ class UnstructuredPromptTool(BasePromptTool):
             prompt=user_prompt,
             system_prompt=system_prompt,
             task_type=self._get_task_type(),
+            tool_name=self.name,
             **kwargs
         )
         self._log_result(response, state)

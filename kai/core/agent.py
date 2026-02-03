@@ -165,8 +165,10 @@ class KaiAgent:
         # Actions in autonomous mode initiation - in first iteration
         auto_mode_initiation = not session_id
         if auto_mode_initiation:
-            # Generate session_id in first iteration
-            session_id = f"session_{hashlib.md5(f'{user_id}_{user_input}'.encode()).hexdigest()[:8]}"
+            # Generate unique session_id in first iteration
+            # Include timestamp to avoid checkpointer state conflicts from previous runs
+            import time
+            session_id = f"session_{hashlib.md5(f'{user_id}_{user_input}_{time.time()}'.encode()).hexdigest()[:8]}"
 
             # Enable VSCode communication for new autonomous session (unless suppression was requested)
             if not self._suppress_vscode_messages:
@@ -224,6 +226,7 @@ class KaiAgent:
             'autonomous_mode': context.get('autonomousMode', False),
             'autonomous_mode_continue': context.get('autonomousModeContinue', False),
             'autonomous_mode_termination': context.get('autonomousModeTermination', False),
+            'learning_mode': context.get('learningMode', False),
             'last_cell_modified_in_auto_mode': context.get('lastCellModifiedInAutoMode', None),
 
             # Task management
@@ -287,3 +290,27 @@ class KaiAgent:
         else:
             structured_response = {"processed": False}
         return structured_response, session_id
+
+    async def run_learning_explanation(self, context: dict) -> None:
+        """Run learning explanation for the just-executed step.
+
+        This translates VSCode context (camelCase) to Python state (snake_case)
+        and runs the learning graph to generate an educational explanation.
+
+        Args:
+            context: Context from VSCode with execution result and other state
+        """
+        # Translate camelCase to snake_case (same as chat method)
+        context_data = {
+            'execution_result': context.get('executionResult', ''),
+            'execution_history': context.get('executionHistory', []),
+            'conversation_history': context.get('conversationHistory', []),
+            'notebook_structure': context.get('notebookStructure', {'totalCells': 0, 'allCells': []}),
+            'learning_mode': context.get('learningMode', False),
+        }
+
+        # Run learning explanation through orchestrator
+        await self.orchestrator.run_learning_explanation_for_vscode(
+            context=context_data,
+            session_metadata=self.session_metadata.copy()
+        )

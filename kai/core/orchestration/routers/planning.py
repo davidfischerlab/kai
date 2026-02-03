@@ -1,4 +1,8 @@
-"""Planning phase routing function."""
+"""Planning phase routing function.
+
+Routes between task list generation and evaluation using new evaluator-optimizer
+pattern field names (task_list_grade, task_list_feedback).
+"""
 
 from typing import Callable, Optional
 
@@ -25,8 +29,8 @@ def route_planning_phase(
     1. task_list_generation (generates tasks ONCE)
     2. Router checks retrieval_queries:
        - If has queries: workflow_refinement → back to task_list_generation
-       - If no queries: task_list_critique (if enabled)
-    3. Router checks critique approval:
+       - If no queries: task_list_evaluator (if enabled)
+    3. Router checks evaluation grade:
        - If APPROVED: complete
        - If REJECTED: back to task_list_generation
     4. Max iterations total
@@ -46,7 +50,7 @@ def route_planning_phase(
     task_planning_iteration = safe_get(state, "task_planning_iteration", 0)
     rag_enabled = safe_get(state, "rag_enabled", False)
     use_critique = safe_get(state, "use_critique", False)
-    task_list_approval = safe_get(state, "task_list_approval")
+    task_list_grade = safe_get(state, "task_list_grade")
 
     if send_message:
         # Show pending queries (not yet searched) instead of total accumulated
@@ -60,7 +64,7 @@ def route_planning_phase(
         f"use_critique={use_critique}, workflow_iter={workflow_iteration}, "
         f"task_iter={task_planning_iteration}, "
         f"queries={len(retrieval_queries) if retrieval_queries else 0}, "
-        f"approval={task_list_approval}"
+        f"grade={task_list_grade}"
     )
 
     # ===== PHASE 1: Initial workflow retrieval (max 2 iterations) =====
@@ -103,12 +107,12 @@ def route_planning_phase(
         if rag_enabled:
             return "workflow_refinement"
 
-        # No RAG - run critique if enabled
+        # No RAG - run evaluator if enabled
         if use_critique:
-            # Check if we just came from critique
-            if task_list_approval is not None:
-                # We have a critique result
-                if task_list_approval == "APPROVED":
+            # Check if we just came from evaluator
+            if task_list_grade is not None:
+                # We have an evaluation result
+                if task_list_grade == "APPROVED":
                     logger.info(
                         f"[PLANNING ROUTER] Task list approved after "
                         f"{task_planning_iteration} iterations → "
@@ -126,13 +130,13 @@ def route_planning_phase(
                     )
                     return "increment_task_planning_iteration"
             else:
-                # No critique result yet - run critique
+                # No evaluation result yet - run evaluator
                 logger.info(
                     f"[PLANNING ROUTER] Task planning iteration "
                     f"{task_planning_iteration + 1}/{max_task_planning_iterations}: "
-                    f"running critique → task_list_critique"
+                    f"running evaluator → task_list_evaluator"
                 )
-                return "task_list_critique"
+                return "task_list_evaluator"
 
         # No critique enabled and no retrieval queries - done
         logger.info(
@@ -143,11 +147,11 @@ def route_planning_phase(
             log_task_list_summary(state)
         return "filter_and_complete" if rag_enabled else "complete"
 
-    # ===== PHASE 3: After task list critique =====
-    if planning_phase == "task_list_critique":
-        if task_list_approval is not None:
-            # We have a valid critique result
-            if task_list_approval == "APPROVED":
+    # ===== PHASE 3: After task list evaluation =====
+    if planning_phase == "task_list_evaluation":
+        if task_list_grade is not None:
+            # We have a valid evaluation result
+            if task_list_grade == "APPROVED":
                 if send_message:
                     send_message(
                         f"[KAI] Task list approved after "
@@ -165,9 +169,9 @@ def route_planning_phase(
                 # Rejected - generate again (increment iteration counter first)
                 return "increment_task_planning_iteration"
         else:
-            # Critique tool returned invalid/no result - proceed anyway
+            # Evaluator tool returned invalid/no result - proceed anyway
             logger.warning(
-                f"[PLANNING ROUTER] Task list critique returned no approval status "
+                f"[PLANNING ROUTER] Task list evaluator returned no grade "
                 f"(LLM error) - proceeding anyway → "
                 f"{'filter_and_complete' if rag_enabled else 'complete'}"
             )
@@ -182,9 +186,9 @@ def route_planning_phase(
             # Had queries → continue to next iteration (skip critique)
             return "increment_task_planning_iteration"
         else:
-            # No queries → proceed to critique (if enabled)
+            # No queries → proceed to evaluator (if enabled)
             if use_critique:
-                return "task_list_critique"
+                return "task_list_evaluator"
             else:
                 # No critique enabled → complete
                 logger.info(

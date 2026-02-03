@@ -89,9 +89,9 @@ async def mark_reasoning_completed(
     result = {
         "task_list": updated_task_list,
         "reasoning_response": None,
-        "reasoning_approval": None,
-        "reasoning_critique": None,
-        "reasoning_critique_iteration": 0,  # Reset reasoning-specific counter
+        "reasoning_grade": None,
+        "reasoning_feedback": None,
+        "reasoning_evaluation_iteration": 0,  # Reset reasoning-specific counter
         "active_task": None,
         "active_task_objective": None,
         "is_reasoning_task": False,

@@ -150,7 +150,7 @@ class AutonomousMarkCompletionTool(StructuredPromptTool):
             assert isinstance(task, dict), task
             # Check that updates do not affect pending tasks:
             if task['status'] == "pending" and task['id'] in status_updates.keys() and status_updates[task['id']] != "pending":
-                raise Exception(f"Tried to set task {task['id']} from pending to {status_updates[task['id']]}.")
+                raise ValueError(f"Tried to set task {task['id']} from pending to {status_updates[task['id']]}.")
             task_copy = task.copy()
             if task.get('id') in status_updates:
                 task_copy['status'] = status_updates[task['id']]
@@ -166,9 +166,9 @@ class AutonomousMarkCompletionTool(StructuredPromptTool):
             "task_completion_analyzed": True,  # For deterministic router phase tracking
             "generated_code": None,  # Clear for next iteration
             "reasoning_response": None,  # Clear for next iteration
-            "reasoning_approval": None,  # Clear reasoning critique state for next task
-            "reasoning_critique_iteration": 0,  # Reset reasoning critique counter
-            "autonomous_update_critique_iteration": 0,  # Reset task update critique counter
+            "reasoning_grade": None,  # Clear reasoning state for next task
+            "reasoning_evaluation_iteration": 0,  # Reset reasoning evaluation counter
+            "task_update_evaluation_iteration": 0,  # Reset task update evaluation counter
         }
 
         # Handle backtracking if detected - add backtracking context

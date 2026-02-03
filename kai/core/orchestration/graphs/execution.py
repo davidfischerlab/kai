@@ -22,12 +22,12 @@ AUTONOMOUS_TOOLS = [
     "cell_positioning",
     "code_generation_with_guidance",
     "reasoning_response_with_guidance",
-    "reasoning_critique",
+    "reasoning_evaluator",
     # Positioning tools
     "set_positioning_from_last_cell",
     # Task update tools
     "autonomous_update_tasks",
-    "autonomous_update_critique",
+    "task_update_evaluator",
     # Error recovery tools
     "error_recovery",
     "code_update",

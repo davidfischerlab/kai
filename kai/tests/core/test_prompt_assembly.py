@@ -363,14 +363,14 @@ class TestNoneValueHandling:
     def test_reasoning_instructions_with_none_values_doesnt_crash(self):
         """Verify _build_reasoning_instructions_section handles None values.
 
-        In LangGraph state, reasoning_critique and reasoning_response keys may exist
+        In LangGraph state, reasoning_feedback and reasoning_response keys may exist
         but have None values. The function should return empty string, not crash.
         """
         pm = PromptManager()
 
         # Simulate LangGraph state where keys exist but values are None
         state = create_state(
-            reasoning_critique=None,  # Key exists but value is None
+            reasoning_feedback=None,  # Key exists but value is None
             reasoning_response=None,  # Key exists but value is None
         )
 
@@ -378,8 +378,8 @@ class TestNoneValueHandling:
         result = pm._build_reasoning_instructions_section(state)
         assert result == "", "Should return empty string when values are None"
 
-    def test_reasoning_critique_instructions_with_none_response_doesnt_crash(self):
-        """Verify _build_reasoning_critique_instructions_section handles None reasoning_response."""
+    def test_reasoning_evaluation_instructions_with_none_response_doesnt_crash(self):
+        """Verify _build_reasoning_evaluation_instructions_section handles None reasoning_response."""
         pm = PromptManager()
 
         state = create_state(
@@ -387,11 +387,11 @@ class TestNoneValueHandling:
         )
 
         # Should not crash
-        result = pm._build_reasoning_critique_instructions_section(state)
+        result = pm._build_reasoning_evaluation_instructions_section(state)
         assert result == "", "Should return empty string when reasoning_response is None"
 
-    def test_task_list_update_critique_instructions_with_none_values(self):
-        """Verify _build_task_list_update_critique_instructions_section handles None values."""
+    def test_task_list_update_evaluation_instructions_with_none_values(self):
+        """Verify _build_task_list_update_evaluation_instructions_section handles None values."""
         pm = PromptManager()
 
         state = create_state(
@@ -400,31 +400,31 @@ class TestNoneValueHandling:
         )
 
         # Should not crash
-        result = pm._build_task_list_update_critique_instructions_section(state)
+        result = pm._build_task_list_update_evaluation_instructions_section(state)
         assert result == "", "Should return empty string when rationale is None"
 
-    def test_task_list_update_instructions_with_none_critique(self):
-        """Verify _build_task_list_update_instructions_section handles None critique.
+    def test_task_list_update_instructions_with_none_feedback(self):
+        """Verify _build_task_list_update_instructions_section handles None feedback.
 
-        When critique is None, this function falls through to the else branch
+        When feedback is None, this function falls through to the else branch
         which shows the current task list (standard first pass behavior).
         """
         pm = PromptManager()
 
         state = create_state(
-            autonomous_update_critique=None,  # Key exists but value is None
+            task_update_feedback=None,  # Key exists but value is None
             task_list_backup=None,
             task_list={"tasks": [{"id": 1, "task": "Test task", "status": "pending"}]},
         )
 
         # Should not crash - should return current task list section (first pass)
         result = pm._build_task_list_update_instructions_section(state)
-        # With None critique, it falls through to the else branch which shows current task list
-        assert "current task list" in result.lower(), "Should show current task list when critique is None"
+        # With None feedback, it falls through to the else branch which shows current task list
+        assert "current task list" in result.lower(), "Should show current task list when feedback is None"
         assert "Test task" in result, "Should include task content"
 
-    def test_task_list_generation_critique_instructions_with_none_values(self):
-        """Verify _build_task_list_generation_critique_instructions_section handles None task_text_old."""
+    def test_task_list_generation_evaluation_instructions_with_none_values(self):
+        """Verify _build_task_list_generation_evaluation_instructions_section handles None task_text_old."""
         pm = PromptManager()
 
         state = create_state(
@@ -433,39 +433,39 @@ class TestNoneValueHandling:
         )
 
         # Should not crash - task_text_old should be skipped when None
-        result = pm._build_task_list_generation_critique_instructions_section(state)
+        result = pm._build_task_list_generation_evaluation_instructions_section(state)
         # Should still have current version, just not the old version
         assert "Test" in result or "current version" in result.lower()
 
-    def test_task_list_generation_instructions_with_none_critique(self):
-        """Verify _build_task_list_generation_instructions_section handles None critique."""
+    def test_task_list_generation_instructions_with_none_feedback(self):
+        """Verify _build_task_list_generation_instructions_section handles None feedback."""
         pm = PromptManager()
 
         state = create_state(
-            task_list_critique=None,  # Key exists but value is None
+            task_list_feedback=None,  # Key exists but value is None
             task_list={"tasks": [{"id": 1, "task": "Test", "status": "pending"}]},
         )
 
-        # Should not crash - should return empty string when critique is None
+        # Should not crash - should return empty string when feedback is None
         result = pm._build_task_list_generation_instructions_section(state)
-        assert result.strip() == "", "Should return empty when critique is None"
+        assert result.strip() == "", "Should return empty when feedback is None"
 
 
-class TestCritiqueLoopPromptAssembly:
-    """Test that critique loops properly include old/new versions in prompts.
+class TestEvaluatorLoopPromptAssembly:
+    """Test that evaluator loops properly include old/new versions in prompts.
 
-    Critique loops require showing both the original and updated versions
+    Evaluator loops require showing both the original and updated versions
     so the LLM can compare them. These tests verify that:
-    1. autonomous_update_critique receives both task lists
-    2. autonomous_update_tasks (after critique) receives both task lists + critique
-    3. task_list_critique receives both task lists
-    4. task_list_generation (after critique) receives both + critique
+    1. task_update_evaluation receives both task lists
+    2. autonomous_update_tasks (after evaluation) receives both task lists + feedback
+    3. task_list_evaluation receives both task lists
+    4. task_list_generation (after evaluation) receives both + feedback
     """
 
-    def test_autonomous_update_critique_includes_both_task_lists(self):
-        """Verify autonomous_update_critique prompt includes original and updated task lists.
+    def test_task_update_evaluation_includes_both_task_lists(self):
+        """Verify task_update_evaluation prompt includes original and updated task lists.
 
-        After autonomous_update_tasks runs, the critique prompt should show:
+        After autonomous_update_tasks runs, the evaluation prompt should show:
         - Original task list (from task_list_backup)
         - Updated task list (current task_list)
         - Update rationale
@@ -497,20 +497,20 @@ class TestCritiqueLoopPromptAssembly:
 
         system_prompt, user_prompt = pm.generate_prompt(
             state,
-            PromptScenario.AUTONOMOUS_UPDATE_CRITIQUE
+            PromptScenario.TASK_UPDATE_EVALUATION
         )
 
         # Verify BOTH task lists appear
         assert "Load data from file" in user_prompt, \
-            "Original task should appear in critique prompt"
+            "Original task should appear in evaluation prompt"
         assert "Filter cells by quality metrics" in user_prompt, \
-            "Updated task should appear in critique prompt"
+            "Updated task should appear in evaluation prompt"
         assert "Normalize expression" in user_prompt, \
-            "New task from update should appear in critique prompt"
+            "New task from update should appear in evaluation prompt"
 
         # Verify rationale appears
         assert "Added normalization step" in user_prompt, \
-            "Update rationale should appear in critique prompt"
+            "Update rationale should appear in evaluation prompt"
 
         # Verify structure - should show "original" and "updated/draft"
         assert "original task list" in user_prompt.lower(), \
@@ -518,8 +518,8 @@ class TestCritiqueLoopPromptAssembly:
         assert "draft" in user_prompt.lower() or "updated" in user_prompt.lower(), \
             "Prompt should label the updated task list"
 
-    def test_autonomous_update_critique_without_rationale_returns_empty(self):
-        """Verify critique prompt is empty when no update rationale is present.
+    def test_task_update_evaluation_without_rationale_returns_empty(self):
+        """Verify evaluation prompt is empty when no update rationale is present.
 
         This happens on first execution before any updates have been made.
         """
@@ -532,22 +532,22 @@ class TestCritiqueLoopPromptAssembly:
 
         system_prompt, user_prompt = pm.generate_prompt(
             state,
-            PromptScenario.AUTONOMOUS_UPDATE_CRITIQUE
+            PromptScenario.TASK_UPDATE_EVALUATION
         )
 
-        # The critique instructions section should be empty/minimal when no update has occurred
+        # The evaluation instructions section should be empty/minimal when no update has occurred
         # Check that it doesn't contain task list comparison markers
-        critique_section = pm._build_task_list_update_critique_instructions_section(state)
-        assert critique_section == "", \
-            "Critique section should be empty when no update rationale is present"
+        evaluation_section = pm._build_task_list_update_evaluation_instructions_section(state)
+        assert evaluation_section == "", \
+            "Evaluation section should be empty when no update rationale is present"
 
-    def test_autonomous_update_tasks_after_critique_includes_all_context(self):
-        """Verify autonomous_update_tasks prompt (after critique rejection) includes full context.
+    def test_autonomous_update_tasks_after_evaluation_includes_all_context(self):
+        """Verify autonomous_update_tasks prompt (after evaluation rejection) includes full context.
 
-        After critique returns MODIFY, the regeneration prompt should show:
+        After evaluation returns REJECTED, the regeneration prompt should show:
         - Original task list (from task_list_backup)
         - Current draft (task_list)
-        - Critique feedback
+        - Evaluation feedback
         """
         pm = PromptManager()
 
@@ -568,7 +568,7 @@ class TestCritiqueLoopPromptAssembly:
         state = create_state(
             task_list=current_draft,
             task_list_backup=original_tasks,
-            autonomous_update_critique="Task 2 description is too vague. Be more specific about the analysis type.",
+            task_update_feedback="Task 2 description is too vague. Be more specific about the analysis type.",
         )
 
         system_prompt, user_prompt = pm.generate_prompt(
@@ -579,15 +579,15 @@ class TestCritiqueLoopPromptAssembly:
         # Verify original task appears
         assert "Load data" in user_prompt
 
-        # Verify critique feedback appears
+        # Verify evaluation feedback appears
         assert "too vague" in user_prompt, \
-            "Critique feedback should appear in regeneration prompt"
+            "Evaluation feedback should appear in regeneration prompt"
         assert "Be more specific" in user_prompt
 
     def test_autonomous_update_tasks_first_pass_shows_current_only(self):
         """Verify autonomous_update_tasks first pass only shows current task list.
 
-        On first pass (no critique yet), should only show current task list
+        On first pass (no evaluation yet), should only show current task list
         without comparison context.
         """
         pm = PromptManager()
@@ -601,7 +601,7 @@ class TestCritiqueLoopPromptAssembly:
 
         state = create_state(
             task_list=current_tasks,
-            # No autonomous_update_critique - first pass
+            # No task_update_feedback - first pass
         )
 
         system_prompt, user_prompt = pm.generate_prompt(
@@ -618,10 +618,10 @@ class TestCritiqueLoopPromptAssembly:
         assert "original task list" not in update_section.lower(), \
             "First pass should not show 'original' comparison - only current"
 
-    def test_task_list_generation_critique_includes_both_versions(self):
-        """Verify task_list_critique prompt includes previous and current versions.
+    def test_task_list_evaluation_includes_both_versions(self):
+        """Verify task_list_evaluation prompt includes previous and current versions.
 
-        During initial planning, the critique should compare the previous draft
+        During initial planning, the evaluation should compare the previous draft
         with the current draft.
         """
         pm = PromptManager()
@@ -640,16 +640,16 @@ class TestCritiqueLoopPromptAssembly:
 
         system_prompt, user_prompt = pm.generate_prompt(
             state,
-            PromptScenario.TASK_LIST_CRITIQUE
+            PromptScenario.TASK_LIST_EVALUATION
         )
 
         # Should show both versions
         assert "Load PBMC data" in user_prompt, \
             "Current task list should appear"
         # Previous version via task_text_old
-        critique_section = pm._build_task_list_generation_critique_instructions_section(state)
-        assert "Load data" in critique_section or "previous version" in critique_section.lower(), \
-            "Previous version should appear in critique"
+        evaluation_section = pm._build_task_list_generation_evaluation_instructions_section(state)
+        assert "Load data" in evaluation_section or "previous version" in evaluation_section.lower(), \
+            "Previous version should appear in evaluation"
 
 
 if __name__ == "__main__":

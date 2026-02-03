@@ -52,29 +52,32 @@ def route_standard_retry_branch(
     )
 
     if is_reasoning_task:
-        # Reasoning critique loop
-        # Flow: generate → critique → (if MODIFY) regenerate → critique → ...
-        reasoning_approval = safe_get(state, "reasoning_approval")
-        critique_iteration = safe_get(state, "reasoning_critique_iteration", 0)
+        # Reasoning evaluation loop
+        # Flow: generate → evaluator → (if REJECTED) regenerate → evaluator → ...
+        reasoning_grade = safe_get(state, "reasoning_grade")
+        evaluation_iteration = safe_get(state, "reasoning_evaluation_iteration", 0)
 
         # Check max iterations FIRST (before regenerating)
-        if critique_iteration >= 2:
-            if reasoning_approval == "APPROVED":
+        if evaluation_iteration >= 2:
+            if reasoning_grade == "APPROVED":
                 logger.info(
-                    f"[REASONING] ✅ Approved after {critique_iteration} critique iterations"
+                    f"[REASONING] Approved after {evaluation_iteration} "
+                    f"evaluation iterations"
                 )
                 if send_message:
                     send_message(
-                        f"✅ Reasoning approved after {critique_iteration} critique iterations"
+                        f"Reasoning approved after {evaluation_iteration} "
+                        f"evaluation iterations"
                     )
             else:
                 logger.info(
-                    f"[REASONING] ⚠️ Auto-accepting after max iterations ({critique_iteration}) - "
-                    f"critique did not approve"
+                    f"[REASONING] Auto-accepting after max iterations "
+                    f"({evaluation_iteration}) - evaluator did not approve"
                 )
                 if send_message:
                     send_message(
-                        f"⚠️ Auto-accepting reasoning after max critique iterations ({critique_iteration}) reached"
+                        f"Auto-accepting reasoning after max evaluation iterations "
+                        f"({evaluation_iteration}) reached"
                     )
             logger.debug(
                 "[DET ROUTER] STANDARD RETRY: reasoning complete "
@@ -82,27 +85,29 @@ def route_standard_retry_branch(
             )
             return "mark_reasoning_completed"
 
-        # Generate reasoning if not exists OR if critique rejected (needs regeneration)
+        # Generate reasoning if not exists OR if evaluator rejected (needs regen)
         reasoning_response = safe_get(state, "reasoning_response")
-        if not reasoning_response or reasoning_approval == "MODIFY":
+        if not reasoning_response or reasoning_grade == "REJECTED":
             logger.debug("[DET ROUTER] STANDARD RETRY: regenerating reasoning")
             return "reasoning_response_with_guidance"
 
-        # Run critique if reasoning exists but not yet critiqued (approval is None)
-        if reasoning_approval is None:
+        # Run evaluator if reasoning exists but not yet evaluated (grade is None)
+        if reasoning_grade is None:
             logger.debug(
-                f"[DET ROUTER] STANDARD RETRY: reasoning critique "
-                f"(iter {critique_iteration + 1})"
+                f"[DET ROUTER] STANDARD RETRY: reasoning evaluator "
+                f"(iter {evaluation_iteration + 1})"
             )
-            return "reasoning_critique"
+            return "reasoning_evaluator"
 
         # Approved - mark complete
         if send_message:
             send_message(
-                f"[KAI] Reasoning approved after {critique_iteration} critique iterations"
+                f"[KAI] Reasoning approved after {evaluation_iteration} "
+                f"evaluation iterations"
             )
         logger.debug(
-            "[DET ROUTER] STANDARD RETRY: reasoning complete → mark_reasoning_completed"
+            "[DET ROUTER] STANDARD RETRY: reasoning complete → "
+            "mark_reasoning_completed"
         )
         return "mark_reasoning_completed"
     else:

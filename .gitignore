@@ -165,3 +165,6 @@ MagicMock/
 
 # Development documentation
 development_documentation/
+
+# Claude Code local settings
+.claude/

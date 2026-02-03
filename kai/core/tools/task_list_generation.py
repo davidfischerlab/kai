@@ -104,8 +104,8 @@ class TaskListGenerationTool(StructuredPromptTool):
             "task_list": task_list,
             "retrieval_queries": structured_result.retrieval_queries,
             "planning_phase": "task_planning",  # Set phase for router
-            # NOTE: Router will increment task_planning_iteration when routing back for next iteration
-            "task_list_approval": None,  # Clear previous approval status for next iteration
+            # NOTE: Router will increment task_planning_iteration when routing back
+            "task_list_grade": None,  # Clear previous grade for next iteration
         }
 
         # Create VSCode-ready response for task list display - only include fields VSCode uses
